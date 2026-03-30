@@ -1,0 +1,134 @@
+:root {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #f4efe7;
+  background:
+    radial-gradient(circle at top, rgba(229, 122, 72, 0.28), transparent 35%),
+    linear-gradient(135deg, #2b1d19 0%, #181616 48%, #0f1115 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.page-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.hero-card {
+  width: min(100%, 960px);
+  padding: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  background: rgba(21, 23, 27, 0.8);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px);
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: #ffb37a;
+}
+
+h1 {
+  margin: 0;
+  max-width: 13ch;
+  font-size: clamp(2.5rem, 5vw, 4.75rem);
+  line-height: 0.98;
+}
+
+.lead {
+  max-width: 62ch;
+  margin: 20px 0 0;
+  font-size: 1.05rem;
+  color: rgba(244, 239, 231, 0.82);
+}
+
+.status-chip {
+  display: inline-flex;
+  margin-top: 24px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  border: 1px solid transparent;
+}
+
+.status-chip--pending {
+  background: rgba(255, 211, 133, 0.12);
+  border-color: rgba(255, 211, 133, 0.3);
+  color: #ffd385;
+}
+
+.status-chip--success {
+  background: rgba(123, 221, 168, 0.12);
+  border-color: rgba(123, 221, 168, 0.32);
+  color: #92f0bd;
+}
+
+.status-chip--error {
+  background: rgba(245, 118, 118, 0.12);
+  border-color: rgba(245, 118, 118, 0.32);
+  color: #ffaaaa;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 28px;
+}
+
+.info-card {
+  padding: 20px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.info-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.15rem;
+}
+
+.info-card p {
+  margin: 0;
+  color: rgba(244, 239, 231, 0.78);
+}
+
+@media (max-width: 840px) {
+  .hero-card {
+    padding: 24px;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
