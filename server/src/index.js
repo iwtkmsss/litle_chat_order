@@ -1,7 +1,5 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import { createApp } from './app.js';
-
-dotenv.config();
 
 const port = Number(process.env.PORT) || 3001;
 const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
