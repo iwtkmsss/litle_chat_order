@@ -79,6 +79,48 @@ export const api = {
     });
   },
 
+  lookupApplication(input) {
+    return request('/api/public/applications/lookup', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  listApplications() {
+    return request('/api/applications');
+  },
+
+  getApplication(applicationId) {
+    return request(`/api/applications/${applicationId}`);
+  },
+
+  createApplication(input) {
+    return request('/api/applications', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateApplication(applicationId, input) {
+    return request(`/api/applications/${applicationId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  },
+
+  deleteApplication(applicationId) {
+    return request(`/api/applications/${applicationId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  updateApplicationStage(applicationId, stageId, input) {
+    return request(`/api/applications/${applicationId}/stages/${stageId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  },
+
   listChats() {
     return request('/api/chats');
   },

@@ -3,22 +3,31 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
 import {
+  createApplication,
   createChat,
   deleteChat,
+  deleteApplication,
   deleteUser,
   createMessage,
   createSession,
   createUser,
   findUserByFullName,
+  getApplicationById,
   getAttachmentById,
   getChatById,
   getSessionUser,
+  getUserById,
   hasManager,
+  listApplicationsForUser,
   listChatsForUser,
   listMessages,
   listUsers,
+  lookupPublicApplication,
   removeSession,
+  updateApplication,
+  updateApplicationStage,
   replaceChatAccess,
+  canAccessApplication,
   canAccessChat,
 } from './database.js';
 import {
@@ -77,6 +86,164 @@ function normalizeUserIds(value) {
   }
 
   return [...new Set(value.map((item) => Number(item)).filter(Number.isInteger))];
+}
+
+function validateOptionalText(value, maxLength, fieldName) {
+  const text = String(value ?? '').trim();
+
+  if (text.length > maxLength) {
+    throw new Error(`${fieldName} має містити не більше ${maxLength} символів.`);
+  }
+
+  return text;
+}
+
+function validateRequiredText(value, minLength, maxLength, fieldName) {
+  const text = validateOptionalText(value, maxLength, fieldName);
+
+  if (text.length < minLength) {
+    throw new Error(`${fieldName} має містити щонайменше ${minLength} символи.`);
+  }
+
+  return text;
+}
+
+function validatePhone(value) {
+  const phone = validateRequiredText(value, 7, 40, 'Номер телефону');
+  const digits = phone.replace(/\D/g, '');
+
+  if (digits.length < 7) {
+    throw new Error('Номер телефону має містити щонайменше 7 цифр.');
+  }
+
+  return phone;
+}
+
+function validateEmail(value) {
+  const email = validateOptionalText(value, 160, 'Email').toLowerCase();
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Вкажіть коректну адресу електронної пошти.');
+  }
+
+  return email;
+}
+
+function validateDateValue(value, fieldName, { required = true } = {}) {
+  const date = String(value ?? '').trim();
+
+  if (!date) {
+    if (required) {
+      throw new Error(`${fieldName} є обов’язковою датою.`);
+    }
+
+    return '';
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`${fieldName} має бути у форматі РРРР-ММ-ДД.`);
+  }
+
+  return date;
+}
+
+function normalizeOptionalUserId(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const userId = Number(value);
+
+  if (!Number.isInteger(userId) || userId < 1) {
+    throw new Error('Некоректний ідентифікатор кабінету замовника.');
+  }
+
+  const user = getUserById(userId);
+
+  if (!user || user.role !== 'user' || user.deleted_at) {
+    throw new Error('Обраний кабінет замовника не знайдено.');
+  }
+
+  return userId;
+}
+
+function validateApplicationPayload(input) {
+  const applicationNumber = validateOptionalText(input?.applicationNumber, 80, 'Номер заяви');
+  const applicantFullName = validateFullName(input?.applicantFullName ?? '');
+  const phone = validatePhone(input?.phone ?? '');
+  const email = validateEmail(input?.email ?? '');
+  const objectAddress = validateRequiredText(input?.objectAddress, 3, 500, 'Адреса або назва об’єкта');
+  const connectionType = String(input?.connectionType ?? 'standard');
+  const status = String(input?.status ?? 'in_progress');
+  const receivedAt = validateDateValue(
+    input?.receivedAt ?? new Date().toISOString().slice(0, 10),
+    'Дата отримання заяви',
+  );
+  const responsibleName = validateOptionalText(input?.responsibleName, 160, 'Відповідальний працівник');
+  const notes = validateOptionalText(input?.notes, 5000, 'Примітки');
+  const customerUserId = normalizeOptionalUserId(input?.customerUserId);
+
+  if (!['standard', 'temporary'].includes(connectionType)) {
+    throw new Error('Тип приєднання має бути звичайним або тимчасовим.');
+  }
+
+  if (!['draft', 'in_progress', 'completed', 'rejected'].includes(status)) {
+    throw new Error('Некоректний статус заяви.');
+  }
+
+  return {
+    applicationNumber,
+    applicantFullName,
+    phone,
+    email,
+    objectAddress,
+    connectionType,
+    status,
+    receivedAt,
+    responsibleName,
+    notes,
+    customerUserId,
+  };
+}
+
+function validateStagePayload(input) {
+  const status = String(input?.status ?? 'not_started');
+  const startedAt = validateDateValue(input?.startedAt, 'Дата початку', { required: false });
+  const completedAt = validateDateValue(input?.completedAt, 'Дата виконання', { required: false });
+  const publicNote = validateOptionalText(input?.publicNote, 2000, 'Коментар до етапу');
+  const isVisible = Boolean(input?.isVisible);
+
+  if (!['not_started', 'in_progress', 'completed', 'not_required'].includes(status)) {
+    throw new Error('Некоректний статус етапу.');
+  }
+
+  if (status === 'completed' && !completedAt) {
+    throw new Error('Для виконаного етапу потрібно вказати дату виконання.');
+  }
+
+  return {
+    status,
+    startedAt,
+    completedAt,
+    publicNote,
+    isVisible,
+  };
+}
+
+function validateLookupPayload(input) {
+  const phone = validatePhone(input?.phone ?? '');
+  const fullName = String(input?.fullName ?? '').trim();
+  const applicationNumber = String(input?.applicationNumber ?? '').trim();
+
+  if (!fullName && !applicationNumber) {
+    throw new Error('Вкажіть ПІБ або номер заяви.');
+  }
+
+  return {
+    phone,
+    fullName,
+    applicationNumber,
+  };
 }
 
 export function createApp({ clientUrl }) {
@@ -148,6 +315,27 @@ export function createApp({ clientUrl }) {
     return next();
   }
 
+  function requireApplicationAccess(request, response, next) {
+    const applicationId = Number(request.params.applicationId);
+
+    if (!Number.isInteger(applicationId) || applicationId < 1) {
+      return sendError(response, 400, 'Некоректний ідентифікатор заяви.');
+    }
+
+    const application = getApplicationById(applicationId);
+
+    if (!application) {
+      return sendError(response, 404, 'Заяву не знайдено.');
+    }
+
+    if (!canAccessApplication(request.auth.user, applicationId)) {
+      return sendError(response, 403, 'Доступ до цієї заяви заборонено.');
+    }
+
+    request.application = application;
+    return next();
+  }
+
   app.get('/api/health', (_request, response) => {
     response.json({
       ok: true,
@@ -207,6 +395,23 @@ export function createApp({ clientUrl }) {
     response.status(204).end();
   });
 
+  app.post('/api/public/applications/lookup', (request, response) => {
+    try {
+      const payload = validateLookupPayload(request.body);
+      const application = lookupPublicApplication(payload);
+
+      if (!application) {
+        return sendError(response, 404, 'Заяву не знайдено. Перевірте номер телефону, ПІБ або номер заяви.');
+      }
+
+      return response.json({
+        application,
+      });
+    } catch (error) {
+      return sendError(response, 400, error.message);
+    }
+  });
+
   app.get('/api/users', requireAuth, requireManager, (_request, response) => {
     response.json({
       users: listUsers(),
@@ -251,6 +456,120 @@ export function createApp({ clientUrl }) {
 
     return response.status(204).end();
   });
+
+  app.get('/api/applications', requireAuth, (request, response) => {
+    response.json({
+      applications: listApplicationsForUser(request.auth.user),
+    });
+  });
+
+  app.post('/api/applications', requireAuth, requireManager, (request, response) => {
+    try {
+      const payload = validateApplicationPayload(request.body);
+      const application = createApplication({
+        ...payload,
+        createdBy: request.auth.user.id,
+      });
+
+      response.status(201).json({
+        application,
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return sendError(response, 409, 'Заява з таким номером уже існує.');
+      }
+
+      return sendError(response, 400, error.message);
+    }
+  });
+
+  app.get(
+    '/api/applications/:applicationId',
+    requireAuth,
+    requireApplicationAccess,
+    (request, response) => {
+      response.json({
+        application: request.application,
+      });
+    },
+  );
+
+  app.put(
+    '/api/applications/:applicationId',
+    requireAuth,
+    requireManager,
+    requireApplicationAccess,
+    (request, response) => {
+      try {
+        const payload = validateApplicationPayload(request.body);
+        const application = updateApplication(request.application.id, payload);
+
+        if (!application) {
+          return sendError(response, 404, 'Заяву не знайдено.');
+        }
+
+        response.json({
+          application,
+        });
+      } catch (error) {
+        if (isUniqueConstraintError(error)) {
+          return sendError(response, 409, 'Заява з таким номером уже існує.');
+        }
+
+        return sendError(response, 400, error.message);
+      }
+    },
+  );
+
+  app.delete(
+    '/api/applications/:applicationId',
+    requireAuth,
+    requireManager,
+    requireApplicationAccess,
+    async (request, response) => {
+      const deletedApplication = deleteApplication(request.application.id);
+
+      if (!deletedApplication) {
+        return sendError(response, 404, 'Заяву не знайдено.');
+      }
+
+      await removeStoredFiles(deletedApplication.storedFiles);
+      return response.status(204).end();
+    },
+  );
+
+  app.put(
+    '/api/applications/:applicationId/stages/:stageId',
+    requireAuth,
+    requireManager,
+    requireApplicationAccess,
+    (request, response) => {
+      try {
+        const stageId = Number(request.params.stageId);
+
+        if (!Number.isInteger(stageId) || stageId < 1) {
+          return sendError(response, 400, 'Некоректний ідентифікатор етапу.');
+        }
+
+        const payload = validateStagePayload(request.body);
+        const application = updateApplicationStage(
+          request.application.id,
+          stageId,
+          payload,
+        );
+
+        if (!application) {
+          return sendError(response, 404, 'Етап не знайдено.');
+        }
+
+        response.json({
+          application,
+        });
+      } catch (error) {
+        return sendError(response, 400, error.message);
+      }
+    },
+  );
 
   app.get('/api/chats', requireAuth, (request, response) => {
     response.json({

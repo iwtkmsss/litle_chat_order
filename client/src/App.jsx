@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
-import { LoginScreen } from './components/LoginScreen';
+import { ConnectionPortal } from './components/ConnectionPortal';
 import { ManagerDashboard } from './components/ManagerDashboard';
 import { UserWorkspace } from './components/UserWorkspace';
 
@@ -74,10 +74,10 @@ export default function App() {
 
   if (!user) {
     return (
-      <LoginScreen
+      <ConnectionPortal
         error={loginError}
         isSubmitting={isLoggingIn}
-        onSubmit={handleLogin}
+        onLogin={handleLogin}
       />
     );
   }

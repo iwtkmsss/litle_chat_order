@@ -1,28 +1,30 @@
 import { useEffect, useEffectEvent, useState } from 'react';
 import { api } from '../api';
+import { applicationStatusLabels } from '../connectionContent';
+import { ApplicationProgress } from './ApplicationProgress';
 import { ChatRoom } from './ChatRoom';
 
 export function UserWorkspace({ user, onLogout }) {
-  const [chats, setChats] = useState([]);
-  const [selectedChatId, setSelectedChatId] = useState(null);
+  const [applications, setApplications] = useState([]);
+  const [selectedApplicationId, setSelectedApplicationId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const loadChats = useEffectEvent(async ({ silent = false } = {}) => {
+  const loadApplications = useEffectEvent(async ({ silent = false } = {}) => {
     if (!silent) {
       setIsLoading(true);
       setError('');
     }
 
     try {
-      const response = await api.listChats();
-      setChats(response.chats);
-      setSelectedChatId((current) => {
-        if (response.chats.some((chat) => chat.id === current)) {
+      const response = await api.listApplications();
+      setApplications(response.applications);
+      setSelectedApplicationId((current) => {
+        if (response.applications.some((application) => application.id === current)) {
           return current;
         }
 
-        return response.chats[0]?.id ?? null;
+        return response.applications[0]?.id ?? null;
       });
     } catch (loadError) {
       setError(loadError.message);
@@ -34,10 +36,10 @@ export function UserWorkspace({ user, onLogout }) {
   });
 
   useEffect(() => {
-    loadChats();
+    loadApplications();
 
     const timer = window.setInterval(() => {
-      loadChats({ silent: true });
+      loadApplications({ silent: true });
     }, 15000);
 
     return () => {
@@ -45,17 +47,20 @@ export function UserWorkspace({ user, onLogout }) {
     };
   }, []);
 
-  const selectedChat = chats.find((chat) => chat.id === selectedChatId) ?? null;
+  const selectedApplication =
+    applications.find((application) => application.id === selectedApplicationId) ?? null;
 
   return (
     <main className="workspace-shell">
       <header className="workspace-header">
         <div>
-          <h1>Чати</h1>
+          <span className="section-kicker">Особистий кабінет замовника</span>
+          <h1>Мої заяви</h1>
+          <p className="muted-copy">{user.fullName}</p>
         </div>
 
         <div className="header-actions">
-          <button className="secondary-button" onClick={() => loadChats()} type="button">
+          <button className="secondary-button" onClick={() => loadApplications()} type="button">
             Оновити
           </button>
           <button className="primary-button" onClick={onLogout} type="button">
@@ -66,31 +71,43 @@ export function UserWorkspace({ user, onLogout }) {
 
       <section className="surface-card tabs-card">
         <div className="tab-strip">
-          {chats.map((chat) => (
+          {applications.map((application) => (
             <button
-              className={chat.id === selectedChatId ? 'tab-button is-active' : 'tab-button'}
-              key={chat.id}
-              onClick={() => setSelectedChatId(chat.id)}
+              className={application.id === selectedApplicationId ? 'tab-button is-active' : 'tab-button'}
+              key={application.id}
+              onClick={() => setSelectedApplicationId(application.id)}
               type="button"
             >
-              <strong>{chat.title}</strong>
-              <span>{chat.messageCount} повідомлень</span>
+              <strong>{application.applicationNumber}</strong>
+              <span>{applicationStatusLabels[application.status]}</span>
             </button>
           ))}
         </div>
 
         {isLoading ? <p className="muted-copy">Завантаження...</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
-        {!isLoading && !error && chats.length === 0 ? (
-          <p className="muted-copy">Немає чатів.</p>
+        {!isLoading && !error && applications.length === 0 ? (
+          <p className="muted-copy">У вашому кабінеті ще немає заяв на приєднання.</p>
         ) : null}
       </section>
 
-      <ChatRoom
-        chat={selectedChat}
-        emptyTitle="Немає чатів"
-        onThreadUpdated={() => loadChats({ silent: true })}
-      />
+      {selectedApplication ? (
+        <>
+          <section className="surface-card manager-card">
+            <ApplicationProgress application={selectedApplication} />
+          </section>
+
+          <ChatRoom
+            chat={selectedApplication.chat}
+            emptyTitle="Немає заяви"
+            onThreadUpdated={() => loadApplications({ silent: true })}
+          />
+        </>
+      ) : (
+        <section className="surface-card thread-empty">
+          <h2>Немає заяв</h2>
+        </section>
+      )}
     </main>
   );
 }

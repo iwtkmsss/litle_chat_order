@@ -1,29 +1,58 @@
 import { useEffect, useEffectEvent, useState } from 'react';
 import { api } from '../api';
+import {
+  applicationStatusLabels,
+  connectionTypeLabels,
+  stageStatusLabels,
+  stageStatusOptions,
+} from '../connectionContent';
+import { formatDate, formatDateTime } from '../utils';
 import { ChatRoom } from './ChatRoom';
-import { formatDateTime } from '../utils';
 
-function buildAccessMap(chats) {
-  return Object.fromEntries(
-    chats.map((chat) => [chat.id, [...chat.accessUserIds]]),
-  );
+function getToday() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function createEmptyApplicationForm() {
+  return {
+    applicationNumber: '',
+    applicantFullName: '',
+    phone: '',
+    email: '',
+    objectAddress: '',
+    connectionType: 'standard',
+    status: 'in_progress',
+    receivedAt: getToday(),
+    responsibleName: '',
+    notes: '',
+    customerUserId: '',
+  };
+}
+
+function getStageDraft(stage) {
+  return {
+    status: stage.status,
+    startedAt: stage.startedAt ?? '',
+    completedAt: stage.completedAt ?? '',
+    publicNote: stage.publicNote ?? '',
+    isVisible: stage.isVisible,
+  };
 }
 
 export function ManagerDashboard({ onLogout }) {
   const [users, setUsers] = useState([]);
-  const [chats, setChats] = useState([]);
-  const [accessMap, setAccessMap] = useState({});
-  const [modalChatId, setModalChatId] = useState(null);
-  const [openAccessChatId, setOpenAccessChatId] = useState(null);
+  const [applications, setApplications] = useState([]);
+  const [selectedApplicationId, setSelectedApplicationId] = useState(null);
+  const [stageDrafts, setStageDrafts] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [panelMessage, setPanelMessage] = useState('');
   const [userForm, setUserForm] = useState({ fullName: '', password: '' });
-  const [chatForm, setChatForm] = useState({ title: '', description: '' });
+  const [applicationForm, setApplicationForm] = useState(createEmptyApplicationForm);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
-  const [isCreatingChat, setIsCreatingChat] = useState(false);
-  const [savingChatId, setSavingChatId] = useState(null);
-  const [deletingChatId, setDeletingChatId] = useState(null);
+  const [isCreatingApplication, setIsCreatingApplication] = useState(false);
+  const [savingStageId, setSavingStageId] = useState(null);
+  const [deletingApplicationId, setDeletingApplicationId] = useState(null);
   const [deletingUserId, setDeletingUserId] = useState(null);
 
   const loadDashboard = useEffectEvent(async ({ silent = false } = {}) => {
@@ -33,14 +62,20 @@ export function ManagerDashboard({ onLogout }) {
     }
 
     try {
-      const [usersResponse, chatsResponse] = await Promise.all([
+      const [usersResponse, applicationsResponse] = await Promise.all([
         api.listUsers(),
-        api.listChats(),
+        api.listApplications(),
       ]);
 
       setUsers(usersResponse.users);
-      setChats(chatsResponse.chats);
-      setAccessMap(buildAccessMap(chatsResponse.chats));
+      setApplications(applicationsResponse.applications);
+      setSelectedApplicationId((current) => {
+        if (applicationsResponse.applications.some((application) => application.id === current)) {
+          return current;
+        }
+
+        return applicationsResponse.applications[0]?.id ?? null;
+      });
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -54,51 +89,21 @@ export function ManagerDashboard({ onLogout }) {
     loadDashboard();
   }, []);
 
-  useEffect(() => {
-    if (modalChatId && !chats.some((chat) => chat.id === modalChatId)) {
-      setModalChatId(null);
-    }
-  }, [chats, modalChatId]);
+  const selectedApplication =
+    applications.find((application) => application.id === selectedApplicationId) ?? null;
 
   useEffect(() => {
-    if (openAccessChatId && !chats.some((chat) => chat.id === openAccessChatId)) {
-      setOpenAccessChatId(null);
-    }
-  }, [chats, openAccessChatId]);
-
-  const modalChat = chats.find((chat) => chat.id === modalChatId) ?? null;
-
-  function toggleAccess(chatId, userId) {
-    setAccessMap((current) => {
-      const selected = current[chatId] ?? [];
-      const nextSelected = selected.includes(userId)
-        ? selected.filter((id) => id !== userId)
-        : [...selected, userId];
-
-      return {
-        ...current,
-        [chatId]: nextSelected,
-      };
-    });
-  }
-
-  function getAccessSummary(chatId) {
-    const selectedIds = accessMap[chatId] ?? [];
-
-    if (selectedIds.length === 0) {
-      return 'Немає доступу';
+    if (!selectedApplication) {
+      setStageDrafts({});
+      return;
     }
 
-    const names = users
-      .filter((chatUser) => selectedIds.includes(chatUser.id))
-      .map((chatUser) => chatUser.fullName);
-
-    if (names.length <= 2) {
-      return names.join(', ');
-    }
-
-    return `${names[0]}, ${names[1]} +${names.length - 2}`;
-  }
+    setStageDrafts(
+      Object.fromEntries(
+        selectedApplication.stages.map((stage) => [stage.id, getStageDraft(stage)]),
+      ),
+    );
+  }, [selectedApplication?.id, selectedApplication?.updatedAt]);
 
   async function handleCreateUser(event) {
     event.preventDefault();
@@ -108,7 +113,7 @@ export function ManagerDashboard({ onLogout }) {
     try {
       await api.createUser(userForm);
       setUserForm({ fullName: '', password: '' });
-      setPanelMessage('Створено.');
+      setPanelMessage('Кабінет замовника створено.');
       await loadDashboard({ silent: true });
     } catch (actionError) {
       setPanelMessage(actionError.message);
@@ -117,65 +122,8 @@ export function ManagerDashboard({ onLogout }) {
     }
   }
 
-  async function handleCreateChat(event) {
-    event.preventDefault();
-    setIsCreatingChat(true);
-    setPanelMessage('');
-
-    try {
-      const response = await api.createChat(chatForm);
-      setChatForm({ title: '', description: '' });
-      setPanelMessage('Створено.');
-      await loadDashboard({ silent: true });
-      setModalChatId(response.chat.id);
-    } catch (actionError) {
-      setPanelMessage(actionError.message);
-    } finally {
-      setIsCreatingChat(false);
-    }
-  }
-
-  async function handleSaveAccess(chatId) {
-    setSavingChatId(chatId);
-    setPanelMessage('');
-
-    try {
-      await api.updateChatAccess(chatId, accessMap[chatId] ?? []);
-      setPanelMessage('Оновлено.');
-      setOpenAccessChatId(null);
-      await loadDashboard({ silent: true });
-    } catch (actionError) {
-      setPanelMessage(actionError.message);
-    } finally {
-      setSavingChatId(null);
-    }
-  }
-
-  async function handleDeleteChat(chat) {
-    const confirmed = window.confirm(`Видалити чат "${chat.title}"?`);
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDeletingChatId(chat.id);
-    setPanelMessage('');
-
-    try {
-      await api.deleteChat(chat.id);
-      setPanelMessage('Видалено.');
-      setModalChatId((current) => (current === chat.id ? null : current));
-      setOpenAccessChatId((current) => (current === chat.id ? null : current));
-      await loadDashboard({ silent: true });
-    } catch (actionError) {
-      setPanelMessage(actionError.message);
-    } finally {
-      setDeletingChatId(null);
-    }
-  }
-
   async function handleDeleteUser(chatUser) {
-    const confirmed = window.confirm(`Видалити користувача "${chatUser.fullName}"?`);
+    const confirmed = window.confirm(`Видалити кабінет замовника "${chatUser.fullName}"?`);
 
     if (!confirmed) {
       return;
@@ -186,7 +134,7 @@ export function ManagerDashboard({ onLogout }) {
 
     try {
       await api.deleteUser(chatUser.id);
-      setPanelMessage('Видалено.');
+      setPanelMessage('Кабінет замовника видалено.');
       await loadDashboard({ silent: true });
     } catch (actionError) {
       setPanelMessage(actionError.message);
@@ -195,11 +143,95 @@ export function ManagerDashboard({ onLogout }) {
     }
   }
 
+  async function handleCreateApplication(event) {
+    event.preventDefault();
+    setIsCreatingApplication(true);
+    setPanelMessage('');
+
+    try {
+      const response = await api.createApplication({
+        ...applicationForm,
+        customerUserId: applicationForm.customerUserId || null,
+      });
+      setApplicationForm(createEmptyApplicationForm());
+      setPanelMessage('Заяву додано до реєстру.');
+      await loadDashboard({ silent: true });
+      setSelectedApplicationId(response.application.id);
+    } catch (actionError) {
+      setPanelMessage(actionError.message);
+    } finally {
+      setIsCreatingApplication(false);
+    }
+  }
+
+  async function handleDeleteApplication(application) {
+    const confirmed = window.confirm(`Видалити заяву "${application.applicationNumber}"?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingApplicationId(application.id);
+    setPanelMessage('');
+
+    try {
+      await api.deleteApplication(application.id);
+      setPanelMessage('Заяву видалено.');
+      await loadDashboard({ silent: true });
+    } catch (actionError) {
+      setPanelMessage(actionError.message);
+    } finally {
+      setDeletingApplicationId(null);
+    }
+  }
+
+  async function handleSaveStage(stage) {
+    if (!selectedApplication) {
+      return;
+    }
+
+    setSavingStageId(stage.id);
+    setPanelMessage('');
+
+    try {
+      const response = await api.updateApplicationStage(
+        selectedApplication.id,
+        stage.id,
+        stageDrafts[stage.id],
+      );
+
+      setApplications((current) =>
+        current.map((application) =>
+          application.id === response.application.id ? response.application : application,
+        ),
+      );
+      setPanelMessage('Етап оновлено. Email-лист підготовлено, якщо вказано дату виконання.');
+    } catch (actionError) {
+      setPanelMessage(actionError.message);
+    } finally {
+      setSavingStageId(null);
+    }
+  }
+
+  function updateStageDraft(stageId, patch) {
+    setStageDrafts((current) => ({
+      ...current,
+      [stageId]: {
+        ...current[stageId],
+        ...patch,
+      },
+    }));
+  }
+
   return (
     <main className="workspace-shell">
       <header className="workspace-header">
         <div>
-          <h1>Менеджер</h1>
+          <span className="section-kicker">Виробничо-технічний відділ</span>
+          <h1>Реєстр заявників</h1>
+          <p className="muted-copy">
+            Приєднання до теплових мереж, етапи виконання, документи та листування.
+          </p>
         </div>
 
         <div className="header-actions">
@@ -218,12 +250,15 @@ export function ManagerDashboard({ onLogout }) {
       <section className="manager-top-grid">
         <section className="surface-card manager-card">
           <div className="section-header">
-            <h2>Новий користувач</h2>
+            <div>
+              <span className="section-kicker">Особистий кабінет</span>
+              <h2>Новий замовник</h2>
+            </div>
           </div>
 
           <form className="stack-form" onSubmit={handleCreateUser}>
             <label className="field-block">
-              <span>Ім'я та прізвище</span>
+              <span>Прізвище Ім’я По батькові</span>
               <input
                 className="field-input"
                 disabled={isCreatingUser}
@@ -250,45 +285,165 @@ export function ManagerDashboard({ onLogout }) {
             </label>
 
             <button className="primary-button" disabled={isCreatingUser} type="submit">
-              {isCreatingUser ? 'Створення...' : 'Створити'}
+              {isCreatingUser ? 'Створення...' : 'Створити кабінет'}
             </button>
           </form>
         </section>
 
         <section className="surface-card manager-card">
           <div className="section-header">
-            <h2>Новий чат</h2>
+            <div>
+              <span className="section-kicker">Реєстр</span>
+              <h2>Нова заява на приєднання</h2>
+            </div>
           </div>
 
-          <form className="stack-form" onSubmit={handleCreateChat}>
+          <form className="application-form" onSubmit={handleCreateApplication}>
             <label className="field-block">
-              <span>Назва</span>
+              <span>Номер заяви</span>
               <input
                 className="field-input"
-                disabled={isCreatingChat}
+                disabled={isCreatingApplication}
                 onChange={(event) =>
-                  setChatForm((current) => ({ ...current, title: event.target.value }))
+                  setApplicationForm((current) => ({ ...current, applicationNumber: event.target.value }))
                 }
-                required
-                value={chatForm.title}
+                placeholder="Можна залишити порожнім"
+                value={applicationForm.applicationNumber}
               />
             </label>
 
             <label className="field-block">
-              <span>Опис</span>
-              <textarea
-                className="field-input field-textarea"
-                disabled={isCreatingChat}
+              <span>Кабінет замовника</span>
+              <select
+                className="field-input"
+                disabled={isCreatingApplication}
+                onChange={(event) => {
+                  const selectedUser = users.find((chatUser) => chatUser.id === Number(event.target.value));
+                  setApplicationForm((current) => ({
+                    ...current,
+                    customerUserId: event.target.value,
+                    applicantFullName: current.applicantFullName || selectedUser?.fullName || '',
+                  }));
+                }}
+                value={applicationForm.customerUserId}
+              >
+                <option value="">Без прив’язки до кабінету</option>
+                {users.map((chatUser) => (
+                  <option key={chatUser.id} value={chatUser.id}>
+                    {chatUser.fullName}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field-block">
+              <span>Прізвище Ім’я По батькові</span>
+              <input
+                className="field-input"
+                disabled={isCreatingApplication}
                 onChange={(event) =>
-                  setChatForm((current) => ({ ...current, description: event.target.value }))
+                  setApplicationForm((current) => ({ ...current, applicantFullName: event.target.value }))
                 }
-                rows={4}
-                value={chatForm.description}
+                required
+                value={applicationForm.applicantFullName}
               />
             </label>
 
-            <button className="primary-button" disabled={isCreatingChat} type="submit">
-              {isCreatingChat ? 'Створення...' : 'Створити'}
+            <label className="field-block">
+              <span>Номер телефону</span>
+              <input
+                className="field-input"
+                disabled={isCreatingApplication}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({ ...current, phone: event.target.value }))
+                }
+                required
+                value={applicationForm.phone}
+              />
+            </label>
+
+            <label className="field-block">
+              <span>Email для поштових листів</span>
+              <input
+                className="field-input"
+                disabled={isCreatingApplication}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({ ...current, email: event.target.value }))
+                }
+                type="email"
+                value={applicationForm.email}
+              />
+            </label>
+
+            <label className="field-block field-block--wide">
+              <span>Об’єкт або адреса приєднання</span>
+              <input
+                className="field-input"
+                disabled={isCreatingApplication}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({ ...current, objectAddress: event.target.value }))
+                }
+                required
+                value={applicationForm.objectAddress}
+              />
+            </label>
+
+            <label className="field-block">
+              <span>Тип приєднання</span>
+              <select
+                className="field-input"
+                disabled={isCreatingApplication}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({ ...current, connectionType: event.target.value }))
+                }
+                value={applicationForm.connectionType}
+              >
+                <option value="standard">Приєднання до теплових мереж</option>
+                <option value="temporary">Тимчасове приєднання</option>
+              </select>
+            </label>
+
+            <label className="field-block">
+              <span>Дата отримання заяви</span>
+              <input
+                className="field-input"
+                disabled={isCreatingApplication}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({ ...current, receivedAt: event.target.value }))
+                }
+                required
+                type="date"
+                value={applicationForm.receivedAt}
+              />
+            </label>
+
+            <label className="field-block field-block--wide">
+              <span>Відповідальний працівник</span>
+              <input
+                className="field-input"
+                disabled={isCreatingApplication}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({ ...current, responsibleName: event.target.value }))
+                }
+                value={applicationForm.responsibleName}
+              />
+            </label>
+
+            <label className="field-block field-block--wide">
+              <span>Примітки</span>
+              <textarea
+                className="field-input field-textarea"
+                disabled={isCreatingApplication}
+                onChange={(event) =>
+                  setApplicationForm((current) => ({ ...current, notes: event.target.value }))
+                }
+                rows={3}
+                value={applicationForm.notes}
+              />
+            </label>
+
+            <button className="primary-button field-block--wide" disabled={isCreatingApplication} type="submit">
+              {isCreatingApplication ? 'Додавання...' : 'Додати заяву'}
             </button>
           </form>
         </section>
@@ -297,12 +452,63 @@ export function ManagerDashboard({ onLogout }) {
       <section className="manager-simple-grid">
         <section className="surface-card manager-card">
           <div className="section-header">
-            <h2>Користувачі</h2>
-            <span className="counter-chip">{users.length}</span>
+            <div>
+              <h2>Заяви</h2>
+              <p className="muted-copy">Телефон, ПІБ, номер заяви та поточний прогрес.</p>
+            </div>
+            <span className="counter-chip">{applications.length}</span>
           </div>
 
           {isLoading ? <p className="muted-copy">Завантаження...</p> : null}
-          {!isLoading && users.length === 0 ? <p className="muted-copy">Немає користувачів.</p> : null}
+          {!isLoading && applications.length === 0 ? <p className="muted-copy">Заяв ще немає.</p> : null}
+
+          <div className="application-list">
+            {applications.map((application) => (
+              <article
+                className={
+                  application.id === selectedApplicationId
+                    ? 'application-card is-active'
+                    : 'application-card'
+                }
+                key={application.id}
+              >
+                <button
+                  className="application-card__main"
+                  onClick={() => setSelectedApplicationId(application.id)}
+                  type="button"
+                >
+                  <span className="section-kicker">{application.applicationNumber}</span>
+                  <strong>{application.applicantFullName}</strong>
+                  <span>{application.objectAddress}</span>
+                  <span>
+                    {application.stageSummary.completed}/{application.stageSummary.total} етапів ·{' '}
+                    {applicationStatusLabels[application.status]}
+                  </span>
+                </button>
+
+                <div className="application-card__actions">
+                  <button
+                    className="danger-button"
+                    disabled={deletingApplicationId === application.id}
+                    onClick={() => handleDeleteApplication(application)}
+                    type="button"
+                  >
+                    {deletingApplicationId === application.id ? 'Видалення...' : 'Видалити'}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="surface-card manager-card">
+          <div className="section-header">
+            <div>
+              <h2>Кабінети замовників</h2>
+              <p className="muted-copy">Доступ до особистого кабінету та чату по заяві.</p>
+            </div>
+            <span className="counter-chip">{users.length}</span>
+          </div>
 
           <div className="entity-list">
             {users.map((chatUser) => (
@@ -324,119 +530,161 @@ export function ManagerDashboard({ onLogout }) {
             ))}
           </div>
         </section>
-
-        <section className="surface-card manager-card">
-          <div className="section-header">
-            <h2>Чати</h2>
-            <span className="counter-chip">{chats.length}</span>
-          </div>
-
-          {isLoading ? <p className="muted-copy">Завантаження...</p> : null}
-          {!isLoading && chats.length === 0 ? <p className="muted-copy">Немає чатів.</p> : null}
-
-          <div className="chat-admin-list">
-            {chats.map((chat) => (
-              <article className="chat-admin-card" key={chat.id}>
-                <div className="chat-admin-head">
-                  <div className="chat-admin-title">
-                    <strong>{chat.title}</strong>
-                    {chat.description ? <p className="muted-copy">{chat.description}</p> : null}
-                  </div>
-
-                  <div className="chat-admin-actions">
-                    <button
-                      className="secondary-button"
-                      onClick={() =>
-                        setOpenAccessChatId((current) => (current === chat.id ? null : chat.id))
-                      }
-                      type="button"
-                    >
-                      Доступ
-                    </button>
-                    <button
-                      className="secondary-button"
-                      onClick={() => setModalChatId(chat.id)}
-                      type="button"
-                    >
-                      Чат
-                    </button>
-                    <button
-                      className="danger-button"
-                      disabled={deletingChatId === chat.id}
-                      onClick={() => handleDeleteChat(chat)}
-                      type="button"
-                    >
-                      {deletingChatId === chat.id ? 'Видалення...' : 'Видалити'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="chat-admin-meta">
-                  <span>{chat.messageCount} повідомлень</span>
-                  <span>{formatDateTime(chat.updatedAt)}</span>
-                  <span className="access-summary">{getAccessSummary(chat.id)}</span>
-                </div>
-
-                {openAccessChatId === chat.id ? (
-                  <div className="access-flyout">
-                    {users.length === 0 ? (
-                      <p className="muted-copy">Немає користувачів.</p>
-                    ) : (
-                      <div className="access-grid">
-                        {users.map((chatUser) => (
-                          <label className="access-toggle" key={`${chat.id}-${chatUser.id}`}>
-                            <input
-                              checked={(accessMap[chat.id] ?? []).includes(chatUser.id)}
-                              onChange={() => toggleAccess(chat.id, chatUser.id)}
-                              type="checkbox"
-                            />
-                            <span>{chatUser.fullName}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="access-flyout-actions">
-                      <button
-                        className="secondary-button"
-                        onClick={() => setOpenAccessChatId(null)}
-                        type="button"
-                      >
-                        Закрити
-                      </button>
-                      <button
-                        className="primary-button"
-                        disabled={savingChatId === chat.id}
-                        onClick={() => handleSaveAccess(chat.id)}
-                        type="button"
-                      >
-                        {savingChatId === chat.id ? 'Збереження...' : 'Зберегти'}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </article>
-            ))}
-          </div>
-        </section>
       </section>
 
-      {modalChat ? (
-        <div className="modal-backdrop" onClick={() => setModalChatId(null)} role="presentation">
-          <div className="modal-shell" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
-            <div className="modal-toolbar">
-              <button className="secondary-button" onClick={() => setModalChatId(null)} type="button">
-                Закрити
-              </button>
+      {selectedApplication ? (
+        <section className="application-detail-grid">
+          <section className="surface-card manager-card">
+            <div className="section-header">
+              <div>
+                <span className="section-kicker">Заява {selectedApplication.applicationNumber}</span>
+                <h2>{selectedApplication.applicantFullName}</h2>
+                <p className="muted-copy">{selectedApplication.objectAddress}</p>
+              </div>
             </div>
 
+            <div className="detail-meta-grid">
+              <span>{connectionTypeLabels[selectedApplication.connectionType]}</span>
+              <span>{applicationStatusLabels[selectedApplication.status]}</span>
+              <span>Телефон: {selectedApplication.phone}</span>
+              <span>Email: {selectedApplication.email || 'не вказано'}</span>
+              <span>Дата заяви: {formatDate(selectedApplication.receivedAt)}</span>
+              <span>Відповідальний: {selectedApplication.responsibleName || 'не вказано'}</span>
+            </div>
+
+            {selectedApplication.notes ? <p className="stage-note">{selectedApplication.notes}</p> : null}
+          </section>
+
+          <section className="surface-card manager-card">
+            <div className="section-header">
+              <div>
+                <h2>Поштові листи</h2>
+                <p className="muted-copy">Заглушка майбутньої email-інтеграції.</p>
+              </div>
+              <span className="counter-chip">{selectedApplication.notifications.length}</span>
+            </div>
+
+            {selectedApplication.notifications.length === 0 ? (
+              <p className="muted-copy">Листів ще немає.</p>
+            ) : (
+              <div className="email-log">
+                {selectedApplication.notifications.slice(0, 5).map((notification) => (
+                  <article className="email-log-item" key={notification.id}>
+                    <strong>{notification.subject}</strong>
+                    <span>{notification.recipientEmail || 'email не вказано'} · {notification.status}</span>
+                    <small>{formatDateTime(notification.createdAt)}</small>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="surface-card manager-card application-detail-grid__wide">
+            <div className="section-header">
+              <div>
+                <h2>Етапи виконання приєднання</h2>
+                <p className="muted-copy">
+                  Замовник бачить видимі етапи після натискання кнопки «Отримати інформацію».
+                </p>
+              </div>
+            </div>
+
+            <div className="stage-editor-list">
+              {selectedApplication.stages.map((stage) => {
+                const draft = stageDrafts[stage.id] ?? getStageDraft(stage);
+
+                return (
+                  <article className="stage-editor" key={stage.id}>
+                    <div className="stage-editor__title">
+                      <span className="counter-chip">{stage.sortOrder}</span>
+                      <div>
+                        <h3>{stage.title}</h3>
+                        <p className="muted-copy">{stage.description}</p>
+                      </div>
+                    </div>
+
+                    <div className="stage-editor__controls">
+                      <label className="field-block">
+                        <span>Стадія виконання</span>
+                        <select
+                          className="field-input"
+                          onChange={(event) => updateStageDraft(stage.id, { status: event.target.value })}
+                          value={draft.status}
+                        >
+                          {stageStatusOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="field-block">
+                        <span>Дата початку</span>
+                        <input
+                          className="field-input"
+                          onChange={(event) => updateStageDraft(stage.id, { startedAt: event.target.value })}
+                          type="date"
+                          value={draft.startedAt}
+                        />
+                      </label>
+
+                      <label className="field-block">
+                        <span>Виконано, дата виконання</span>
+                        <input
+                          className="field-input"
+                          onChange={(event) => updateStageDraft(stage.id, { completedAt: event.target.value })}
+                          type="date"
+                          value={draft.completedAt}
+                        />
+                      </label>
+                    </div>
+
+                    <label className="field-block">
+                      <span>Коментар для замовника</span>
+                      <textarea
+                        className="field-input field-textarea"
+                        onChange={(event) => updateStageDraft(stage.id, { publicNote: event.target.value })}
+                        rows={3}
+                        value={draft.publicNote}
+                      />
+                    </label>
+
+                    <div className="stage-editor__footer">
+                      <label className="access-toggle">
+                        <input
+                          checked={draft.isVisible}
+                          onChange={(event) => updateStageDraft(stage.id, { isVisible: event.target.checked })}
+                          type="checkbox"
+                        />
+                        <span>Показувати замовнику</span>
+                      </label>
+
+                      <span className="muted-copy">{stageStatusLabels[stage.status]}</span>
+
+                      <button
+                        className="primary-button"
+                        disabled={savingStageId === stage.id}
+                        onClick={() => handleSaveStage(stage)}
+                        type="button"
+                      >
+                        {savingStageId === stage.id ? 'Збереження...' : 'Зберегти етап'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="application-detail-grid__wide">
             <ChatRoom
-              chat={modalChat}
-              emptyTitle="Немає чатів"
+              chat={selectedApplication.chat}
+              emptyTitle="Немає заяви"
               onThreadUpdated={() => loadDashboard({ silent: true })}
             />
-          </div>
-        </div>
+          </section>
+        </section>
       ) : null}
     </main>
   );
