@@ -72,3 +72,6 @@ server/         Express API
 server/data/    SQLite база
 server/uploads/ вложения чатов
 ```
+
+npm run create-manager -- --name "манагер" --password "123"
+npm run dev
