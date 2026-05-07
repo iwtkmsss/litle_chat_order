@@ -84,6 +84,7 @@ db.exec(`
     received_at TEXT NOT NULL,
     responsible_name TEXT NOT NULL,
     notes TEXT NOT NULL,
+    appendix_data TEXT NOT NULL DEFAULT '{}',
     customer_user_id INTEGER,
     chat_id INTEGER NOT NULL UNIQUE,
     created_by INTEGER NOT NULL,
@@ -132,6 +133,16 @@ const userColumns = db.prepare(`PRAGMA table_info(users)`).all();
 if (!userColumns.some((column) => column.name === 'deleted_at')) {
   db.exec(`ALTER TABLE users ADD COLUMN deleted_at TEXT`);
 }
+
+function ensureColumn(tableName, columnName, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+
+  if (!columns.some((column) => column.name === columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
+  }
+}
+
+ensureColumn('applications', 'appendix_data', "appendix_data TEXT NOT NULL DEFAULT '{}'");
 
 export const connectionStageTemplates = [
   {
@@ -397,13 +408,14 @@ const createApplicationStatement = db.prepare(`
     received_at,
     responsible_name,
     notes,
+    appendix_data,
     customer_user_id,
     chat_id,
     created_by,
     created_at,
     updated_at
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertApplicationStageStatement = db.prepare(`
@@ -437,6 +449,7 @@ const listApplicationsStatement = db.prepare(`
     applications.received_at AS receivedAt,
     applications.responsible_name AS responsibleName,
     applications.notes,
+    applications.appendix_data AS appendixData,
     applications.customer_user_id AS customerUserId,
     applications.chat_id AS chatId,
     applications.created_by AS createdBy,
@@ -461,6 +474,7 @@ const listUserApplicationsStatement = db.prepare(`
     applications.received_at AS receivedAt,
     applications.responsible_name AS responsibleName,
     applications.notes,
+    applications.appendix_data AS appendixData,
     applications.customer_user_id AS customerUserId,
     applications.chat_id AS chatId,
     applications.created_by AS createdBy,
@@ -487,6 +501,7 @@ const getApplicationByIdStatement = db.prepare(`
     applications.received_at AS receivedAt,
     applications.responsible_name AS responsibleName,
     applications.notes,
+    applications.appendix_data AS appendixData,
     applications.customer_user_id AS customerUserId,
     applications.chat_id AS chatId,
     applications.created_by AS createdBy,
@@ -576,6 +591,7 @@ const updateApplicationStatement = db.prepare(`
       received_at = ?,
       responsible_name = ?,
       notes = ?,
+      appendix_data = ?,
       customer_user_id = ?,
       updated_at = ?
   WHERE id = ?
@@ -733,6 +749,15 @@ function mapEmailNotification(row) {
   };
 }
 
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(value || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function mapApplication(row, { includePrivate = true } = {}) {
   const stages = listStagesForApplication(row.id);
   const visibleStages = includePrivate
@@ -753,6 +778,7 @@ function mapApplication(row, { includePrivate = true } = {}) {
     receivedAt: row.receivedAt,
     responsibleName: includePrivate ? row.responsibleName : undefined,
     notes: includePrivate ? row.notes : undefined,
+    appendixData: includePrivate ? parseJsonObject(row.appendixData) : undefined,
     customerUserId: includePrivate ? row.customerUserId : undefined,
     customerUserName: includePrivate ? row.customerUserName : undefined,
     chatId: includePrivate ? row.chatId : undefined,
@@ -935,6 +961,7 @@ const createApplicationTransaction = db.transaction((input) => {
     input.receivedAt,
     input.responsibleName,
     input.notes,
+    JSON.stringify(input.appendixData || {}),
     customerUserId,
     chatId,
     input.createdBy,
@@ -1018,6 +1045,7 @@ const updateApplicationTransaction = db.transaction((applicationId, input) => {
     input.receivedAt,
     input.responsibleName,
     input.notes,
+    JSON.stringify(input.appendixData || {}),
     customerUserId,
     timestamp,
     applicationId,

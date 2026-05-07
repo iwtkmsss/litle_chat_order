@@ -367,6 +367,26 @@ p {
   gap: 14px;
 }
 
+.appendix-form-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #d9e1e9;
+  border-radius: 18px;
+  background: #f9fbfc;
+}
+
+.appendix-form-section > div:first-child {
+  grid-column: 1 / -1;
+}
+
+.appendix-form-section h3 {
+  font-family: inherit;
+  letter-spacing: 0;
+  font-size: 1.08rem;
+}
+
 .lookup-form .primary-button {
   align-self: end;
 }
@@ -395,23 +415,60 @@ p {
 }
 
 .document-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
 .document-chip {
-  display: inline-flex;
+  display: grid;
+  gap: 4px;
   padding: 10px 12px;
   border: 1px solid #d6e0e8;
   border-radius: 14px;
   background: #f4f8fb;
   color: #253548;
   font-weight: 700;
+  text-decoration: none;
+}
+
+.document-chip span {
+  color: #69788a;
+  font-size: 0.86rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .document-chip--legal {
   background: #eef3f7;
+}
+
+.appendix-detail-list {
+  display: grid;
+  gap: 14px;
+}
+
+.appendix-detail {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #d9e1e9;
+  border-radius: 18px;
+  background: #f9fbfc;
+}
+
+.appendix-detail h3 {
+  font-family: inherit;
+  letter-spacing: 0;
+  font-size: 1.05rem;
+}
+
+.appendix-detail ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+  color: #334154;
 }
 
 .application-list {
@@ -483,6 +540,40 @@ p {
   border: 1px solid #d9e1e9;
   border-radius: 14px;
   background: #f9fbfc;
+}
+
+.appendix-data-view {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.appendix-data-view h3 {
+  font-family: inherit;
+  letter-spacing: 0;
+  font-size: 1rem;
+}
+
+.appendix-data-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.appendix-data-grid span {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #d9e1e9;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #334154;
+  overflow-wrap: anywhere;
+}
+
+.appendix-data-grid strong {
+  color: #69788a;
+  font-size: 0.84rem;
 }
 
 .email-log {
@@ -1084,7 +1175,10 @@ p {
 
   .lookup-form,
   .application-form,
+  .appendix-form-section,
+  .document-grid,
   .detail-meta-grid,
+  .appendix-data-grid,
   .stage-editor__controls {
     grid-template-columns: 1fr;
   }

@@ -26,6 +26,44 @@ function createEmptyApplicationForm() {
     responsibleName: '',
     notes: '',
     customerUserId: '',
+    appendixData: {
+      appendix3: {
+        operatorRecipient: '',
+        mailingAddress: '',
+        operatorName: '',
+        objectName: '',
+        connectionReason: '',
+        representativeName: '',
+        representativePhone: '',
+        representativeEmail: '',
+      },
+      questionnaire: {
+        type: 'heat_use',
+        customerInfo: '',
+        designOrganization: '',
+        constructionObject: '',
+        constructionStartYear: '',
+        commissioningYear: '',
+        permittedHeatLoad: '',
+        heatSupplyContractNumber: '',
+        personalAccountNumber: '',
+        additionalHeatLoad: '',
+        totalHeatLoad: '',
+        heatingLoad: '',
+        hotWaterMaxLoad: '',
+        hotWaterAverageLoad: '',
+        ventilationLoad: '',
+        technologyLoad: '',
+        additionalCapacity: '',
+        totalCapacity: '',
+        projectDeveloper: '',
+        constructionExecutor: '',
+        existingHeatSource: '',
+        heatObjectDescription: '',
+        thirdPartyConnection: '',
+        notificationMethod: '',
+      },
+    },
   };
 }
 
@@ -38,6 +76,43 @@ function getStageDraft(stage) {
     isVisible: stage.isVisible,
   };
 }
+
+const appendix3Fields = [
+  ['operatorRecipient', 'Керівнику / Оператор'],
+  ['mailingAddress', 'Адреса для листування'],
+  ['operatorName', 'Найменування Оператора'],
+  ['objectName', 'Об’єкт у заяві'],
+  ['connectionReason', 'Причина приєднання'],
+  ['representativeName', 'Відповідальна особа'],
+  ['representativePhone', 'Телефон відповідальної особи'],
+  ['representativeEmail', 'Email відповідальної особи'],
+];
+
+const questionnaireFields = [
+  ['customerInfo', 'Дані замовника'],
+  ['designOrganization', 'Проєктна організація'],
+  ['constructionObject', 'Об’єкт будівництва / реконструкції'],
+  ['constructionStartYear', 'Рік початку будівництва'],
+  ['commissioningYear', 'Рік введення в експлуатацію'],
+  ['permittedHeatLoad', 'Дозволене теплове навантаження'],
+  ['heatSupplyContractNumber', 'Договір теплової енергії №'],
+  ['personalAccountNumber', 'Особовий рахунок №'],
+  ['additionalHeatLoad', 'Додаткове теплове навантаження'],
+  ['totalHeatLoad', 'Загальне теплове навантаження'],
+  ['additionalCapacity', 'Додаткова технічна потужність'],
+  ['totalCapacity', 'Загальна технічна потужність'],
+  ['heatingLoad', 'Опалення'],
+  ['hotWaterMaxLoad', 'ГВП максимальне'],
+  ['hotWaterAverageLoad', 'ГВП середнє'],
+  ['ventilationLoad', 'Вентиляція'],
+  ['technologyLoad', 'Технологія'],
+  ['projectDeveloper', 'Проєкт МО забезпечує'],
+  ['constructionExecutor', 'Виконавець будівельних робіт'],
+  ['existingHeatSource', 'Існуюче джерело теплопостачання'],
+  ['heatObjectDescription', 'Об’єкт теплофікації'],
+  ['thirdPartyConnection', 'Підключення третіх осіб'],
+  ['notificationMethod', 'Спосіб повідомлення'],
+];
 
 export function ManagerDashboard({ onLogout }) {
   const [users, setUsers] = useState([]);
@@ -219,6 +294,19 @@ export function ManagerDashboard({ onLogout }) {
       [stageId]: {
         ...current[stageId],
         ...patch,
+      },
+    }));
+  }
+
+  function updateAppendixField(section, field, value) {
+    setApplicationForm((current) => ({
+      ...current,
+      appendixData: {
+        ...current.appendixData,
+        [section]: {
+          ...current.appendixData[section],
+          [field]: value,
+        },
       },
     }));
   }
@@ -442,6 +530,375 @@ export function ManagerDashboard({ onLogout }) {
               />
             </label>
 
+            <div className="appendix-form-section field-block--wide">
+              <div>
+                <span className="section-kicker">Додаток 3</span>
+                <h3>Заява на приєднання</h3>
+              </div>
+
+              <label className="field-block">
+                <span>Керівнику / найменування Оператора</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('appendix3', 'operatorRecipient', event.target.value)}
+                  value={applicationForm.appendixData.appendix3.operatorRecipient}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Адреса для листування</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('appendix3', 'mailingAddress', event.target.value)}
+                  value={applicationForm.appendixData.appendix3.mailingAddress}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Найменування Оператора в заяві</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('appendix3', 'operatorName', event.target.value)}
+                  value={applicationForm.appendixData.appendix3.operatorName}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Найменування та адреса об’єкта</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('appendix3', 'objectName', event.target.value)}
+                  value={applicationForm.appendixData.appendix3.objectName}
+                />
+              </label>
+
+              <label className="field-block field-block--wide">
+                <span>Причина приєднання</span>
+                <select
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('appendix3', 'connectionReason', event.target.value)}
+                  value={applicationForm.appendixData.appendix3.connectionReason}
+                >
+                  <option value="">Не вказано</option>
+                  <option value="Об’єкт не був підключений до теплових мереж Оператора">
+                    Об’єкт не був підключений до теплових мереж Оператора
+                  </option>
+                  <option value="Збільшення теплового навантаження або теплової потужності об’єкта">
+                    Збільшення теплового навантаження або теплової потужності об’єкта
+                  </option>
+                  <option value="Зміна вимог до надійності транспортування та якості теплової енергії">
+                    Зміна вимог до надійності транспортування та якості теплової енергії
+                  </option>
+                  <option value="Зміна вимог нормативно-правових актів">
+                    Зміна вимог нормативно-правових актів
+                  </option>
+                </select>
+              </label>
+
+              <label className="field-block">
+                <span>Відповідальна особа замовника</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('appendix3', 'representativeName', event.target.value)}
+                  value={applicationForm.appendixData.appendix3.representativeName}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Телефон відповідальної особи</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('appendix3', 'representativePhone', event.target.value)}
+                  value={applicationForm.appendixData.appendix3.representativePhone}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Email відповідальної особи</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('appendix3', 'representativeEmail', event.target.value)}
+                  type="email"
+                  value={applicationForm.appendixData.appendix3.representativeEmail}
+                />
+              </label>
+            </div>
+
+            <div className="appendix-form-section field-block--wide">
+              <div>
+                <span className="section-kicker">Додаток 4 / Додаток 5</span>
+                <h3>Опитувальний лист</h3>
+              </div>
+
+              <label className="field-block">
+                <span>Тип опитувального листа</span>
+                <select
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'type', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.type}
+                >
+                  <option value="heat_use">Додаток 4 - тепловикористальні установки</option>
+                  <option value="generation">Додаток 5 - теплогенеруючі/когенераційні установки</option>
+                </select>
+              </label>
+
+              <label className="field-block">
+                <span>Дані замовника</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'customerInfo', event.target.value)}
+                  placeholder="Найменування, адреса, адмінрайон, email, телефон"
+                  value={applicationForm.appendixData.questionnaire.customerInfo}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Проєктна організація</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'designOrganization', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.designOrganization}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Планується будівництво / реконструкція об’єкта</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'constructionObject', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.constructionObject}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Рік початку будівництва</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'constructionStartYear', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.constructionStartYear}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Рік введення в експлуатацію</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'commissioningYear', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.commissioningYear}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Дозволене теплове навантаження</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'permittedHeatLoad', event.target.value)}
+                  placeholder="Гкал/год або МВт"
+                  value={applicationForm.appendixData.questionnaire.permittedHeatLoad}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Договір користування / постачання теплової енергії №</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'heatSupplyContractNumber', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.heatSupplyContractNumber}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Особовий рахунок №</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'personalAccountNumber', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.personalAccountNumber}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Додаткове теплове навантаження</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'additionalHeatLoad', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.additionalHeatLoad}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Загальне теплове навантаження</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'totalHeatLoad', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.totalHeatLoad}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Додаткова технічна потужність у точці приєднання</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'additionalCapacity', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.additionalCapacity}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Загальна технічна потужність у точці приєднання</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'totalCapacity', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.totalCapacity}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Опалення</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'heatingLoad', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.heatingLoad}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Гаряче водопостачання максимальне</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'hotWaterMaxLoad', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.hotWaterMaxLoad}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Гаряче водопостачання середнє</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'hotWaterAverageLoad', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.hotWaterAverageLoad}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Вентиляція</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'ventilationLoad', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.ventilationLoad}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Технологія</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'technologyLoad', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.technologyLoad}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Розробку проєкту мереж Оператора забезпечує</span>
+                <select
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'projectDeveloper', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.projectDeveloper}
+                >
+                  <option value="">Не вказано</option>
+                  <option value="Оператор">Оператор</option>
+                  <option value="Замовник">Замовник</option>
+                </select>
+              </label>
+
+              <label className="field-block">
+                <span>Виконавець будівельних робіт</span>
+                <select
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'constructionExecutor', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.constructionExecutor}
+                >
+                  <option value="">Не вказано</option>
+                  <option value="Оператор">Оператор</option>
+                  <option value="Інший суб’єкт господарювання">Інший суб’єкт господарювання</option>
+                </select>
+              </label>
+
+              <label className="field-block field-block--wide">
+                <span>Стислі дані про існуюче джерело теплопостачання</span>
+                <textarea
+                  className="field-input field-textarea"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'existingHeatSource', event.target.value)}
+                  rows={3}
+                  value={applicationForm.appendixData.questionnaire.existingHeatSource}
+                />
+              </label>
+
+              <label className="field-block field-block--wide">
+                <span>Стислі дані про об’єкт теплофікації</span>
+                <textarea
+                  className="field-input field-textarea"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'heatObjectDescription', event.target.value)}
+                  rows={3}
+                  value={applicationForm.appendixData.questionnaire.heatObjectDescription}
+                />
+              </label>
+
+              <label className="field-block">
+                <span>Підключення третіх осіб</span>
+                <select
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'thirdPartyConnection', event.target.value)}
+                  value={applicationForm.appendixData.questionnaire.thirdPartyConnection}
+                >
+                  <option value="">Не вказано</option>
+                  <option value="так">так</option>
+                  <option value="ні">ні</option>
+                </select>
+              </label>
+
+              <label className="field-block">
+                <span>Повідомлення надати</span>
+                <input
+                  className="field-input"
+                  disabled={isCreatingApplication}
+                  onChange={(event) => updateAppendixField('questionnaire', 'notificationMethod', event.target.value)}
+                  placeholder="За місцем подання, email або пошта"
+                  value={applicationForm.appendixData.questionnaire.notificationMethod}
+                />
+              </label>
+            </div>
+
             <button className="primary-button field-block--wide" disabled={isCreatingApplication} type="submit">
               {isCreatingApplication ? 'Додавання...' : 'Додати заяву'}
             </button>
@@ -553,6 +1010,38 @@ export function ManagerDashboard({ onLogout }) {
             </div>
 
             {selectedApplication.notes ? <p className="stage-note">{selectedApplication.notes}</p> : null}
+
+            <div className="appendix-data-view">
+              <h3>Дані з Додатка 3</h3>
+              <div className="appendix-data-grid">
+                {appendix3Fields
+                  .filter(([key]) => selectedApplication.appendixData?.appendix3?.[key])
+                  .map(([key, label]) => (
+                    <span key={key}>
+                      <strong>{label}</strong>
+                      {selectedApplication.appendixData.appendix3[key]}
+                    </span>
+                  ))}
+              </div>
+
+              <h3>Дані з опитувального листа</h3>
+              <div className="appendix-data-grid">
+                <span>
+                  <strong>Тип</strong>
+                  {selectedApplication.appendixData?.questionnaire?.type === 'generation'
+                    ? 'Додаток 5 - теплогенеруючі/когенераційні установки'
+                    : 'Додаток 4 - тепловикористальні установки'}
+                </span>
+                {questionnaireFields
+                  .filter(([key]) => selectedApplication.appendixData?.questionnaire?.[key])
+                  .map(([key, label]) => (
+                    <span key={key}>
+                      <strong>{label}</strong>
+                      {selectedApplication.appendixData.questionnaire[key]}
+                    </span>
+                  ))}
+              </div>
+            </div>
           </section>
 
           <section className="surface-card manager-card">

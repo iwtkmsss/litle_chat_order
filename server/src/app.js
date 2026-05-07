@@ -182,6 +182,7 @@ function validateApplicationPayload(input) {
   const responsibleName = validateOptionalText(input?.responsibleName, 160, 'Відповідальний працівник');
   const notes = validateOptionalText(input?.notes, 5000, 'Примітки');
   const customerUserId = normalizeOptionalUserId(input?.customerUserId);
+  const appendixData = validateAppendixData(input?.appendixData);
 
   if (!['standard', 'temporary'].includes(connectionType)) {
     throw new Error('Тип приєднання має бути звичайним або тимчасовим.');
@@ -202,7 +203,57 @@ function validateApplicationPayload(input) {
     receivedAt,
     responsibleName,
     notes,
+    appendixData,
     customerUserId,
+  };
+}
+
+function validateAppendixText(input, key, maxLength = 500) {
+  return validateOptionalText(input?.[key], maxLength, key);
+}
+
+function validateAppendixData(input) {
+  const data = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+
+  return {
+    appendix3: {
+      operatorRecipient: validateAppendixText(data.appendix3, 'operatorRecipient'),
+      mailingAddress: validateAppendixText(data.appendix3, 'mailingAddress', 700),
+      operatorName: validateAppendixText(data.appendix3, 'operatorName'),
+      objectName: validateAppendixText(data.appendix3, 'objectName', 700),
+      connectionReason: validateAppendixText(data.appendix3, 'connectionReason', 700),
+      representativeName: validateAppendixText(data.appendix3, 'representativeName'),
+      representativePhone: validateAppendixText(data.appendix3, 'representativePhone', 80),
+      representativeEmail: validateAppendixText(data.appendix3, 'representativeEmail', 160),
+    },
+    questionnaire: {
+      type: ['heat_use', 'generation'].includes(data.questionnaire?.type)
+        ? data.questionnaire.type
+        : 'heat_use',
+      customerInfo: validateAppendixText(data.questionnaire, 'customerInfo', 1000),
+      designOrganization: validateAppendixText(data.questionnaire, 'designOrganization', 1000),
+      constructionObject: validateAppendixText(data.questionnaire, 'constructionObject', 1000),
+      constructionStartYear: validateAppendixText(data.questionnaire, 'constructionStartYear', 20),
+      commissioningYear: validateAppendixText(data.questionnaire, 'commissioningYear', 20),
+      permittedHeatLoad: validateAppendixText(data.questionnaire, 'permittedHeatLoad', 120),
+      heatSupplyContractNumber: validateAppendixText(data.questionnaire, 'heatSupplyContractNumber', 160),
+      personalAccountNumber: validateAppendixText(data.questionnaire, 'personalAccountNumber', 160),
+      additionalHeatLoad: validateAppendixText(data.questionnaire, 'additionalHeatLoad', 120),
+      totalHeatLoad: validateAppendixText(data.questionnaire, 'totalHeatLoad', 120),
+      heatingLoad: validateAppendixText(data.questionnaire, 'heatingLoad', 120),
+      hotWaterMaxLoad: validateAppendixText(data.questionnaire, 'hotWaterMaxLoad', 120),
+      hotWaterAverageLoad: validateAppendixText(data.questionnaire, 'hotWaterAverageLoad', 120),
+      ventilationLoad: validateAppendixText(data.questionnaire, 'ventilationLoad', 120),
+      technologyLoad: validateAppendixText(data.questionnaire, 'technologyLoad', 120),
+      additionalCapacity: validateAppendixText(data.questionnaire, 'additionalCapacity', 120),
+      totalCapacity: validateAppendixText(data.questionnaire, 'totalCapacity', 120),
+      projectDeveloper: validateAppendixText(data.questionnaire, 'projectDeveloper', 120),
+      constructionExecutor: validateAppendixText(data.questionnaire, 'constructionExecutor', 160),
+      existingHeatSource: validateAppendixText(data.questionnaire, 'existingHeatSource', 1200),
+      heatObjectDescription: validateAppendixText(data.questionnaire, 'heatObjectDescription', 1200),
+      thirdPartyConnection: validateAppendixText(data.questionnaire, 'thirdPartyConnection', 20),
+      notificationMethod: validateAppendixText(data.questionnaire, 'notificationMethod', 500),
+    },
   };
 }
 

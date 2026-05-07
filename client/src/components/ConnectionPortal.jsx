@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
 import {
+  appendixDocumentDetails,
   connectionInfoSections,
   documentSamples,
   legalBase,
@@ -47,7 +48,7 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
       <nav className="public-nav" aria-label="Навігація сторінки приєднання">
         <div>
           <strong>Приєднання</strong>
-          <span>ТОВ «Сумитеплоенерго»</span>
+          <span>Електронний сервіс теплових мереж</span>
         </div>
 
         <div className="public-nav__links">
@@ -175,10 +176,33 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
           <section className="surface-card info-card">
             <h2>Зразки документів</h2>
             <div className="document-grid">
-              {documentSamples.map((documentName) => (
-                <span className="document-chip" key={documentName}>
-                  {documentName}
-                </span>
+              {documentSamples.map((document) => (
+                <a
+                  className="document-chip"
+                  download
+                  href={document.href}
+                  key={document.href}
+                >
+                  <strong>{document.title}</strong>
+                  <span>{document.fileName}</span>
+                </a>
+              ))}
+            </div>
+          </section>
+
+          <section className="surface-card info-card">
+            <h2>Що містять додатки</h2>
+            <div className="appendix-detail-list">
+              {appendixDocumentDetails.map((document) => (
+                <article className="appendix-detail" key={document.title}>
+                  <h3>{document.title}</h3>
+                  <p className="muted-copy">{document.summary}</p>
+                  <ul>
+                    {document.fields.map((field) => (
+                      <li key={field}>{field}</li>
+                    ))}
+                  </ul>
+                </article>
               ))}
             </div>
           </section>
