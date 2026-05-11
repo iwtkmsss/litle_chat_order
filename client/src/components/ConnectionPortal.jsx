@@ -16,8 +16,16 @@ const navItems = [
   { id: 'login', label: 'Вхід' },
 ];
 
+const deadlineHighlights = [
+  ['10', 'робочих днів', 'підготовка договору, ТУ та рахунку'],
+  ['10', 'календарних днів', 'оплата рахунку замовником'],
+  ['3', 'місяці', 'повернення підписаного договору'],
+  ['1', 'календарний день', 'тимчасове приєднання'],
+];
+
 export function ConnectionPortal({ error, isSubmitting, onLogin }) {
   const [activePage, setActivePage] = useState('connection');
+  const [activeModal, setActiveModal] = useState(null);
   const [lookupForm, setLookupForm] = useState({
     phone: '',
     fullName: '',
@@ -66,43 +74,59 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
       </nav>
 
       {activePage === 'connection' ? (
-        <>
-          <header className="workspace-header public-header">
+        <section className="connection-clean-page">
+          <header className="connection-clean-header surface-card">
             <div>
-              <span className="section-kicker">Окрема сторінка «Приєднання»</span>
+              <span className="section-kicker">Електронний сервіс</span>
               <h1>Приєднання до теплових мереж</h1>
-              <p className="muted-copy">
-                Загальна інформація, алгоритм приєднання, строки, підстави для відмови
-                та особливості тимчасового приєднання на період воєнного стану.
+              <p>
+                Порядок подання заяви, перелік документів, контроль строків, підстави для відмови
+                та особливості тимчасового приєднання в одному зручному просторі.
               </p>
             </div>
+
+            <aside className="connection-deadline-panel" aria-label="Ключові строки">
+              <span className="section-kicker">Контроль строків</span>
+              <div className="connection-deadline-grid">
+                {deadlineHighlights.map(([amount, unit, description]) => (
+                  <span className="connection-deadline-item" key={description}>
+                    <strong>{amount}</strong>
+                    <small>{unit}</small>
+                    <em>{description}</em>
+                  </span>
+                ))}
+              </div>
+            </aside>
           </header>
 
-          <section className="public-main">
-            {connectionInfoSections.map((section) => (
-              <section className="surface-card info-card" key={section.title}>
+          <section className="connection-info-grid">
+            {connectionInfoSections.map((section, index) => (
+              <article
+                className="connection-info-card surface-card"
+                key={section.title}
+              >
+                <span className="counter-chip">{index + 1}</span>
                 <h2>{section.title}</h2>
                 <div className="info-copy">
                   {section.paragraphs.map((paragraph) => (
                     <p key={paragraph}>{paragraph}</p>
                   ))}
                 </div>
-
                 {section.list ? (
-                  <ol className="official-list">
+                  <ol className="official-list connection-info-list">
                     {section.list.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
                   </ol>
                 ) : null}
-              </section>
+              </article>
             ))}
           </section>
-        </>
+        </section>
       ) : null}
 
       {activePage === 'status' ? (
-        <section className="public-page-narrow">
+        <section className="public-page-narrow public-centered-page">
           <header className="public-page-header">
             <span className="section-kicker">Отримати інформацію</span>
             <h1>Перевірити стан заяви</h1>
@@ -163,7 +187,7 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
       ) : null}
 
       {activePage === 'documents' ? (
-        <section className="public-page-narrow">
+        <section className="public-page-narrow public-centered-page documents-page">
           <header className="public-page-header">
             <span className="section-kicker">Зразки та нормативна база</span>
             <h1>Документи</h1>
@@ -175,33 +199,24 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
 
           <section className="surface-card info-card">
             <h2>Зразки документів</h2>
-            <div className="document-grid">
-              {documentSamples.map((document) => (
-                <a
-                  className="document-chip"
-                  download
-                  href={document.href}
-                  key={document.href}
-                >
-                  <strong>{document.title}</strong>
-                  <span>{document.fileName}</span>
-                </a>
-              ))}
-            </div>
-          </section>
-
-          <section className="surface-card info-card">
-            <h2>Що містять додатки</h2>
-            <div className="appendix-detail-list">
-              {appendixDocumentDetails.map((document) => (
-                <article className="appendix-detail" key={document.title}>
-                  <h3>{document.title}</h3>
-                  <p className="muted-copy">{document.summary}</p>
-                  <ul>
-                    {document.fields.map((field) => (
-                      <li key={field}>{field}</li>
-                    ))}
-                  </ul>
+            <div className="document-list">
+              {documentSamples.map((document, index) => (
+                <article className="document-row" key={document.href}>
+                  <a
+                    className="document-row__file"
+                    download
+                    href={document.href}
+                  >
+                    <strong>{document.title}</strong>
+                    <span>{document.fileName}</span>
+                  </a>
+                  <button
+                    className="secondary-button document-row__details"
+                    onClick={() => setActiveModal({ type: 'appendix', index })}
+                    type="button"
+                  >
+                    Детально
+                  </button>
                 </article>
               ))}
             </div>
@@ -221,7 +236,7 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
       ) : null}
 
       {activePage === 'login' ? (
-        <section className="public-page-narrow public-login-page">
+        <section className="public-page-narrow public-login-page public-centered-page">
           <header className="public-page-header">
             <span className="section-kicker">Особистий кабінет</span>
             <h1>Вхід</h1>
@@ -241,6 +256,39 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
           </section>
         </section>
       ) : null}
+
+      {activeModal ? (
+        <InfoModal onClose={() => setActiveModal(null)}>
+          <article className="modal-content">
+            <h2>{appendixDocumentDetails[activeModal.index].title}</h2>
+            <p className="muted-copy">{appendixDocumentDetails[activeModal.index].summary}</p>
+            <div className="appendix-detail-list">
+              <article className="appendix-detail">
+                <ul>
+                  {appendixDocumentDetails[activeModal.index].fields.map((field) => (
+                    <li key={field}>{field}</li>
+                  ))}
+                </ul>
+              </article>
+            </div>
+          </article>
+        </InfoModal>
+      ) : null}
     </main>
+  );
+}
+
+function InfoModal({ children, onClose }) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal-shell surface-card" role="dialog" aria-modal="true">
+        <div className="modal-toolbar">
+          <button className="secondary-button" onClick={onClose} type="button">
+            Закрити
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
   );
 }

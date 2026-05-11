@@ -82,7 +82,7 @@ export default function App() {
     );
   }
 
-  if (user.role === 'manager') {
+  if (user.role === 'admin' || user.role === 'manager') {
     return <ManagerDashboard user={user} onLogout={handleLogout} />;
   }
 

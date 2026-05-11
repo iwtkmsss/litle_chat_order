@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:public": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:public": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "react": "^19.2.4",
@@ -17,4 +19,3 @@
     "vite": "^8.0.3"
   }
 }
-

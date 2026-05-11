@@ -8,9 +8,12 @@
   ],
   "scripts": {
     "dev": "concurrently -n client,server -c magenta,cyan \"npm run dev -w client\" \"npm run dev -w server\"",
+    "dev:public": "node scripts/public-runner.mjs dev",
+    "preview:public": "node scripts/public-runner.mjs preview",
+    "build:public": "node scripts/public-runner.mjs build",
     "build": "npm run build -w client",
     "start": "npm run start -w server",
-    "create-manager": "npm run create-manager -w server --"
+    "create-admin": "npm run create-admin -w server --"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

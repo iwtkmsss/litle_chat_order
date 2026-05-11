@@ -21,9 +21,19 @@ async function parseResponse(response) {
   return null;
 }
 
+const apiBaseUrl = String(import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+
+export function apiUrl(path) {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  return `${apiBaseUrl}${path}`;
+}
+
 async function request(path, options = {}) {
   const isFormData = options.body instanceof FormData;
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...options,
     credentials: 'include',
     headers: {
@@ -79,6 +89,61 @@ export const api = {
     });
   },
 
+  listStations() {
+    return request('/api/stations');
+  },
+
+  createStation(input) {
+    return request('/api/stations', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateStation(stationId, input) {
+    return request(`/api/stations/${stationId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  },
+
+  listSettings() {
+    return request('/api/settings');
+  },
+
+  updateSetting(key, input) {
+    return request(`/api/settings/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  },
+
+  listDeadlineRules() {
+    return request('/api/deadline-rules');
+  },
+
+  updateDeadlineRule(key, input) {
+    return request(`/api/deadline-rules/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  },
+
+  listStageTemplates() {
+    return request('/api/stage-templates');
+  },
+
+  updateStageTemplate(templateId, input) {
+    return request(`/api/stage-templates/${templateId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  },
+
+  listAuditLog(limit = 100) {
+    return request(`/api/audit-log?limit=${limit}`);
+  },
+
   lookupApplication(input) {
     return request('/api/public/applications/lookup', {
       method: 'POST',
@@ -118,6 +183,13 @@ export const api = {
     return request(`/api/applications/${applicationId}/stages/${stageId}`, {
       method: 'PUT',
       body: JSON.stringify(input),
+    });
+  },
+
+  generateApplicationDocument(applicationId, documentType) {
+    return request(`/api/applications/${applicationId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify({ documentType }),
     });
   },
 

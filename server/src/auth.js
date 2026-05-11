@@ -52,8 +52,10 @@ export function createSessionToken() {
 export function userToClient(user) {
   return {
     id: user.id,
-    fullName: user.full_name,
+    fullName: user.fullName ?? user.full_name,
     role: user.role,
-    createdAt: user.created_at,
+    stationId: user.stationId ?? null,
+    stationName: user.stationName ?? '',
+    createdAt: user.createdAt ?? user.created_at,
   };
 }

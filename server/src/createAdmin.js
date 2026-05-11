@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { createUser, hasManager } from './database.js';
+import { createUser, hasAdmin } from './database.js';
 import {
   hashPassword,
   validateFullName,
@@ -19,8 +19,8 @@ function readArgument(flag) {
 }
 
 async function main() {
-  if (hasManager()) {
-    console.error('Акаунт менеджера вже існує. Цю команду можна використати лише один раз.');
+  if (hasAdmin()) {
+    console.error('Акаунт адміністратора вже існує. Цю команду можна використати лише один раз.');
     process.exit(1);
   }
 
@@ -30,19 +30,19 @@ async function main() {
 
   try {
     const fullName = validateFullName(
-      providedName ?? (await interfaceHandle.question("Ім'я та прізвище менеджера: ")),
+      providedName ?? (await interfaceHandle.question("ПІБ адміністратора: ")),
     );
     const password = validatePassword(
-      providedPassword ?? (await interfaceHandle.question('Пароль менеджера: ')),
+      providedPassword ?? (await interfaceHandle.question('Пароль адміністратора: ')),
     );
     const passwordHash = await hashPassword(password);
-    const manager = createUser({
+    const admin = createUser({
       fullName,
       passwordHash,
-      role: 'manager',
+      role: 'admin',
     });
 
-    console.log(`Менеджера створено: ${manager.full_name}`);
+    console.log(`Адміністратора створено: ${admin.fullName}`);
   } catch (error) {
     console.error(error.message);
     process.exit(1);

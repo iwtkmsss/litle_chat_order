@@ -1,8 +1,10 @@
 import {
   applicationStatusLabels,
   connectionTypeLabels,
+  deadlineStatusLabels,
   stageStatusLabels,
 } from '../connectionContent';
+import { apiUrl } from '../api';
 import { formatDate } from '../utils';
 
 export function ApplicationProgress({ application, compact = false }) {
@@ -41,8 +43,11 @@ export function ApplicationProgress({ application, compact = false }) {
               {!compact ? <p className="muted-copy">{stage.description}</p> : null}
 
               <div className="stage-meta">
+                {stage.expectedAt ? <span>Очікуваний строк: {formatDate(stage.expectedAt)}</span> : null}
+                {stage.dueAt ? <span>Граничний строк: {formatDate(stage.dueAt)}</span> : null}
                 {stage.startedAt ? <span>Початок: {formatDate(stage.startedAt)}</span> : null}
                 {stage.completedAt ? <span>Дата виконання: {formatDate(stage.completedAt)}</span> : null}
+                {stage.deadlineStatus ? <span>{deadlineStatusLabels[stage.deadlineStatus] ?? stage.deadlineStatus}</span> : null}
               </div>
 
               {stage.publicNote ? <p className="stage-note">{stage.publicNote}</p> : null}
@@ -50,6 +55,17 @@ export function ApplicationProgress({ application, compact = false }) {
           </article>
         ))}
       </div>
+
+      {application.generatedDocuments?.length ? (
+        <div className="document-grid application-documents">
+          {application.generatedDocuments.map((document) => (
+            <a className="document-chip" href={apiUrl(`/api/generated-documents/${document.id}`)} key={document.id}>
+              <strong>{document.title}</strong>
+              <span>{document.originalName}</span>
+            </a>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { api } from '../api';
+import { api, apiUrl } from '../api';
+import { roleLabels } from '../connectionContent';
 import { formatDateTime, formatFileSize } from '../utils';
 
 export function ChatRoom({
@@ -123,12 +124,10 @@ export function ChatRoom({
                   <strong>{message.author.fullName}</strong>
                   <span
                     className={
-                      message.author.role === 'manager'
-                        ? 'role-badge role-badge--manager'
-                        : 'role-badge role-badge--user'
+                      `role-badge role-badge--${message.author.role}`
                     }
                   >
-                    {message.author.role === 'manager' ? 'Менеджер' : 'Користувач'}
+                    {roleLabels[message.author.role] ?? message.author.role}
                   </span>
                 </div>
 
@@ -142,7 +141,7 @@ export function ChatRoom({
                   {message.attachments.map((attachment) => (
                     <a
                       className="attachment-chip"
-                      href={`/api/files/${attachment.id}`}
+                      href={apiUrl(`/api/files/${attachment.id}`)}
                       key={attachment.id}
                       rel="noreferrer"
                       target="_blank"

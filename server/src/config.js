@@ -20,6 +20,10 @@ export const uploadsDir = resolveFromServerRoot(
   process.env.UPLOADS_DIR,
   path.join(serverRoot, 'uploads'),
 );
+export const generatedDocumentsDir = resolveFromServerRoot(
+  process.env.GENERATED_DOCUMENTS_DIR,
+  path.join(serverRoot, 'generated-documents'),
+);
 export const databasePath = resolveFromServerRoot(
   process.env.DATABASE_PATH,
   path.join(dataDir, 'chat-storage.db'),

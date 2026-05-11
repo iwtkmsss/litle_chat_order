@@ -4,8 +4,11 @@ dist/
 .env.local
 .DS_Store
 npm-debug.log*
+dev-server.log
 server/data/*
 !server/data/.gitkeep
 server/uploads/*
 !server/uploads/.gitkeep
+server/generated-documents/*
+!server/generated-documents/.gitkeep
 __pycache__
