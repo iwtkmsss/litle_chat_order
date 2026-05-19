@@ -37,6 +37,7 @@ import {
   listStations,
   listUsersForUser,
   lookupPublicApplication,
+  registerCustomerApplication,
   removeSession,
   replaceChatAccess,
   updateApplication,
@@ -60,6 +61,11 @@ import {
   uploadsDir,
 } from './config.js';
 import { generateApplicationDocument } from './documentGenerator.js';
+import {
+  QUESTIONNAIRE_FIELD_LIMITS,
+  normalizeQuestionnaireType,
+  sanitizeQuestionnairePayload,
+} from './applicationFormSchema.js';
 import { removeStoredFiles, removeUploadedFiles, upload } from './uploads.js';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -247,6 +253,20 @@ function validateAppendixText(input, key, maxLength = 500) {
   return validateOptionalText(input?.[key], maxLength, key);
 }
 
+function validateQuestionnairePayload(input) {
+  const questionnaireType = normalizeQuestionnaireType(input?.type);
+  const sanitized = sanitizeQuestionnairePayload(questionnaireType, input);
+
+  return Object.fromEntries(
+    Object.entries(sanitized).map(([key, value]) => [
+      key,
+      key === 'type'
+        ? value
+        : validateOptionalText(value, QUESTIONNAIRE_FIELD_LIMITS[key] ?? 1200, key),
+    ]),
+  );
+}
+
 function validateAppendixData(input) {
   const data = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
 
@@ -261,34 +281,7 @@ function validateAppendixData(input) {
       representativePhone: validateAppendixText(data.appendix3, 'representativePhone', 80),
       representativeEmail: validateAppendixText(data.appendix3, 'representativeEmail', 160),
     },
-    questionnaire: {
-      type: ['heat_use', 'generation'].includes(data.questionnaire?.type)
-        ? data.questionnaire.type
-        : 'heat_use',
-      customerInfo: validateAppendixText(data.questionnaire, 'customerInfo', 1000),
-      designOrganization: validateAppendixText(data.questionnaire, 'designOrganization', 1000),
-      constructionObject: validateAppendixText(data.questionnaire, 'constructionObject', 1000),
-      constructionStartYear: validateAppendixText(data.questionnaire, 'constructionStartYear', 20),
-      commissioningYear: validateAppendixText(data.questionnaire, 'commissioningYear', 20),
-      permittedHeatLoad: validateAppendixText(data.questionnaire, 'permittedHeatLoad', 120),
-      heatSupplyContractNumber: validateAppendixText(data.questionnaire, 'heatSupplyContractNumber', 160),
-      personalAccountNumber: validateAppendixText(data.questionnaire, 'personalAccountNumber', 160),
-      additionalHeatLoad: validateAppendixText(data.questionnaire, 'additionalHeatLoad', 120),
-      totalHeatLoad: validateAppendixText(data.questionnaire, 'totalHeatLoad', 120),
-      heatingLoad: validateAppendixText(data.questionnaire, 'heatingLoad', 120),
-      hotWaterMaxLoad: validateAppendixText(data.questionnaire, 'hotWaterMaxLoad', 120),
-      hotWaterAverageLoad: validateAppendixText(data.questionnaire, 'hotWaterAverageLoad', 120),
-      ventilationLoad: validateAppendixText(data.questionnaire, 'ventilationLoad', 120),
-      technologyLoad: validateAppendixText(data.questionnaire, 'technologyLoad', 120),
-      additionalCapacity: validateAppendixText(data.questionnaire, 'additionalCapacity', 120),
-      totalCapacity: validateAppendixText(data.questionnaire, 'totalCapacity', 120),
-      projectDeveloper: validateAppendixText(data.questionnaire, 'projectDeveloper', 120),
-      constructionExecutor: validateAppendixText(data.questionnaire, 'constructionExecutor', 160),
-      existingHeatSource: validateAppendixText(data.questionnaire, 'existingHeatSource', 1200),
-      heatObjectDescription: validateAppendixText(data.questionnaire, 'heatObjectDescription', 1200),
-      thirdPartyConnection: validateAppendixText(data.questionnaire, 'thirdPartyConnection', 20),
-      notificationMethod: validateAppendixText(data.questionnaire, 'notificationMethod', 500),
-    },
+    questionnaire: validateQuestionnairePayload(data.questionnaire),
   };
 }
 
@@ -416,6 +409,62 @@ function validateCreateUserPayload(input, actor) {
     password,
     role,
     stationId,
+  };
+}
+
+function validatePublicRegistrationPayload(input) {
+  const stationId = validateStationId(input?.stationId);
+  const fullName = validateFullName(input?.fullName ?? '');
+  const password = validatePassword(input?.password ?? '');
+  const phone = validatePhone(input?.phone ?? '');
+  const email = validateEmail(input?.email ?? '', { required: true });
+  const objectAddress = validateRequiredText(input?.objectAddress, 3, 500, 'Адреса або назва об’єкта');
+  const connectionType = String(input?.connectionType ?? 'standard');
+  const mailingAddress = validateRequiredText(input?.mailingAddress, 3, 700, 'Адреса для листування');
+  const objectName = validateRequiredText(input?.objectName || objectAddress, 3, 700, 'Об’єкт у заяві');
+  const connectionReason = validateOptionalText(input?.connectionReason, 700, 'Причина приєднання');
+  const notes = validateOptionalText(input?.notes, 5000, 'Примітки');
+  const questionnaireType = normalizeQuestionnaireType(input?.questionnaireType ?? input?.type);
+
+  if (!['standard', 'temporary'].includes(connectionType)) {
+    throw new Error('Тип приєднання має бути звичайним або тимчасовим.');
+  }
+
+  const appendixData = validateAppendixData({
+    appendix3: {
+      mailingAddress,
+      objectName,
+      connectionReason,
+      representativeName: fullName,
+      representativePhone: phone,
+      representativeEmail: email,
+    },
+    questionnaire: {
+      ...input,
+      type: questionnaireType,
+      customerName: input?.customerName || fullName,
+      customerAddress: input?.customerAddress || mailingAddress,
+      customerEmail: input?.customerEmail || email,
+      customerPhone: input?.customerPhone || phone,
+      objectName,
+      objectAddress,
+      notificationMethod: input?.notificationMethod || email,
+    },
+  });
+
+  return {
+    stationId,
+    fullName,
+    password,
+    applicantFullName: fullName,
+    phone,
+    email,
+    objectAddress,
+    connectionType,
+    receivedAt: new Date().toISOString().slice(0, 10),
+    responsibleName: '',
+    notes,
+    appendixData,
   };
 }
 
@@ -613,6 +662,49 @@ export function createApp({ clientUrl }) {
     response.status(204).end();
   });
 
+  app.get('/api/public/stations', (_request, response) => {
+    response.json({
+      stations: listStations()
+        .filter((station) => station.isActive)
+        .map((station) => ({
+          id: station.id,
+          name: station.name,
+        })),
+    });
+  });
+
+  app.post('/api/public/register', async (request, response) => {
+    try {
+      const payload = validatePublicRegistrationPayload(request.body);
+      const passwordHash = await hashPassword(payload.password);
+      const registrationData = { ...payload };
+      delete registrationData.password;
+      const result = registerCustomerApplication({
+        ...registrationData,
+        passwordHash,
+      });
+      const sessionToken = createSession(result.user.id);
+
+      response.cookie(sessionCookieName, sessionToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: sessionDurationMs,
+      });
+
+      response.status(201).json({
+        application: result.application,
+        user: userToClient(result.user),
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return sendError(response, 409, 'Користувач з таким ПІБ уже існує. Увійдіть у кабінет або зверніться до відповідального працівника.');
+      }
+
+      return sendError(response, 400, error.message);
+    }
+  });
+
   app.post('/api/public/applications/lookup', (request, response) => {
     try {
       const payload = validateLookupPayload(request.body);
@@ -661,7 +753,7 @@ export function createApp({ clientUrl }) {
     }
   });
 
-  app.delete('/api/users/:userId', requireAuth, requireStaff, (request, response) => {
+  app.delete('/api/users/:userId', requireAuth, requireAdmin, (request, response) => {
     const userId = Number(request.params.userId);
 
     if (!Number.isInteger(userId) || userId < 1) {
@@ -674,10 +766,6 @@ export function createApp({ clientUrl }) {
       return sendError(response, 404, 'Користувача не знайдено.');
     }
 
-    if (request.auth.user.role === 'manager' && (target.role !== 'customer' || target.stationId !== request.auth.user.stationId)) {
-      return sendError(response, 403, 'Менеджер може видаляти лише замовників своєї станції.');
-    }
-
     const deletedUser = deleteUser(userId, request.auth.user);
 
     if (!deletedUser) {
@@ -687,9 +775,13 @@ export function createApp({ clientUrl }) {
     return response.status(204).end();
   });
 
-  app.get('/api/stations', requireAuth, requireStaff, (_request, response) => {
+  app.get('/api/stations', requireAuth, requireStaff, (request, response) => {
+    const stations = request.auth.user.role === 'admin'
+      ? listStations()
+      : listStations().filter((station) => station.id === request.auth.user.stationId);
+
     response.json({
-      stations: listStations(),
+      stations,
     });
   });
 
@@ -861,7 +953,7 @@ export function createApp({ clientUrl }) {
   app.delete(
     '/api/applications/:applicationId',
     requireAuth,
-    requireStaff,
+    requireAdmin,
     requireApplicationAccess,
     async (request, response) => {
       const deletedApplication = deleteApplication(request.application.id, request.auth.user);
@@ -920,6 +1012,16 @@ export function createApp({ clientUrl }) {
 
         if (!documentTypes.has(documentType)) {
           return sendError(response, 400, 'Некоректний тип документа.');
+        }
+
+        const questionnaireType = normalizeQuestionnaireType(request.application.appendixData?.questionnaire?.type);
+
+        if (documentType === 'appendix4' && questionnaireType !== 'heat_use') {
+          return sendError(response, 400, 'Додаток 4 формується для тепловикористальної установки. Для цієї заявки оберіть Додаток 5.');
+        }
+
+        if (documentType === 'appendix5' && questionnaireType !== 'generation') {
+          return sendError(response, 400, 'Додаток 5 формується для теплогенеруючої / когенераційної установки. Для цієї заявки оберіть Додаток 4.');
         }
 
         const generated = await generateApplicationDocument(request.application, documentType);

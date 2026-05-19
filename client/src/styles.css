@@ -13,6 +13,47 @@
   color-scheme: light;
 }
 
+.not-found-card {
+  max-width: 620px;
+  text-align: center;
+}
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+.field-help,
+.field-unit {
+  color: #637083;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.field-help {
+  display: block;
+  margin-top: 6px;
+}
+
+.dynamic-radio-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.dynamic-radio-group legend {
+  margin-bottom: 8px;
+}
+
+.radio-option-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -75,6 +116,48 @@ p {
   width: min(440px, 100%);
 }
 
+.auth-panel {
+  display: grid;
+  gap: 22px;
+  width: min(980px, 100%);
+  padding: 28px;
+}
+
+.auth-panel__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.auth-panel__head h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.auth-tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid #d7e0e8;
+  border-radius: 14px;
+  background: #f6f9fb;
+}
+
+.auth-tab {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  color: #46566a;
+  font-weight: 700;
+}
+
+.auth-tab.is-active {
+  background: #ffffff;
+  color: #243640;
+  box-shadow: 0 8px 18px rgba(58, 73, 92, 0.1);
+}
+
 .surface-card {
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(138, 154, 173, 0.28);
@@ -108,6 +191,12 @@ p {
   gap: 16px;
   align-content: center;
   min-height: 420px;
+}
+
+.auth-panel .login-panel {
+  width: min(460px, 100%);
+  justify-self: center;
+  min-height: auto;
 }
 
 .login-panel--embedded {
@@ -1223,6 +1312,77 @@ p {
   gap: 14px;
 }
 
+.registration-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.registration-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-content: start;
+  padding: 18px;
+  border: 1px solid #d9e1e9;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fbfcfd, #f6faf8);
+}
+
+.registration-section h2 {
+  grid-column: 1 / -1;
+  font-family: inherit;
+  font-size: 1.12rem;
+}
+
+.questionnaire-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.questionnaire-type-card {
+  display: grid;
+  gap: 5px;
+  min-height: 96px;
+  padding: 16px;
+  border: 1px solid #d6e0e8;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #304153;
+  text-align: left;
+}
+
+.questionnaire-type-card strong {
+  font-size: 1rem;
+}
+
+.questionnaire-type-card span {
+  color: #607183;
+  font-weight: 700;
+}
+
+.questionnaire-type-card.is-active {
+  border-color: #294d54;
+  background: linear-gradient(180deg, #f3faf8, #eaf4f0);
+  box-shadow: 0 12px 24px rgba(41, 77, 84, 0.12);
+}
+
+.registration-type-summary {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid #cfe0d6;
+  border-radius: 12px;
+  background: #f4faf6;
+  color: #2c4050;
+}
+
+.registration-type-summary span {
+  color: #5c6d7f;
+  font-weight: 500;
+}
+
 .access-list {
   display: grid;
   gap: 10px;
@@ -1525,6 +1685,7 @@ p {
   }
 
   .public-nav,
+  .auth-panel__head,
   .workspace-header,
   .dashboard-actions,
   .thread-header,
@@ -1564,6 +1725,9 @@ p {
 
   .lookup-form,
   .application-form,
+  .registration-form,
+  .registration-section,
+  .questionnaire-type-grid,
   .appendix-form-section,
   .document-grid,
   .document-row,

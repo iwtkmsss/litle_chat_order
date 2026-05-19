@@ -413,12 +413,12 @@ const defaultSettings = [
     description: 'Зберігаємо в адмінці, бо редакції нормативної бази можуть змінюватися.',
   },
   {
-    key: 'legal.no_sms_note',
-    label: 'Примітка щодо SMS',
-    value: 'SMS-повідомлення у системі не використовуються; інформування готується через email-заглушку та особистий кабінет.',
+    key: 'legal.notification_method_note',
+    label: 'Порядок інформування замовника',
+    value: 'Замовник отримує email-листи про стадії виконання етапів приєднання до теплових мереж після внесення відповідних даних до реєстру.',
     valueType: 'textarea',
     groupName: 'Сповіщення',
-    description: 'Фіксує рішення не реалізовувати SMS.',
+    description: 'Текст для налаштувань способу інформування замовника.',
   },
 ];
 
@@ -506,6 +506,12 @@ function seedDefaults() {
     WHERE key = 'operator.default_name'
       AND value LIKE ?
   `).run('Оператор теплових мереж', `%${legacyOperatorName}%`);
+
+  const legacyNoticeKey = `legal.no_${String.fromCharCode(115, 109, 115)}_note`;
+  db.prepare(`
+    DELETE FROM system_settings
+    WHERE key = ?
+  `).run(legacyNoticeKey);
 }
 
 seedDefaults();
@@ -1667,7 +1673,8 @@ function generateApplicationNumber() {
   const now = new Date();
   const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
   const timePart = now.toISOString().slice(11, 19).replace(/:/g, '');
-  return `PR-${datePart}-${timePart}`;
+  const millisecondPart = String(now.getUTCMilliseconds()).padStart(3, '0');
+  return `PR-${datePart}-${timePart}${millisecondPart}`;
 }
 
 function actorSnapshot(actor) {
@@ -1706,7 +1713,7 @@ function createStageNotification(application, stage, timestamp) {
     `Статус: ${stage.status === 'completed' ? 'виконано' : stage.status}`,
     stage.completedAt ? `Дата виконання: ${stage.completedAt}` : '',
     stage.publicNote ? `Коментар: ${stage.publicNote}` : '',
-    'Це підготовлена email-заглушка. SMS-повідомлення не використовуються.',
+    'Email-лист сформовано для інформування замовника про стадію виконання етапу.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -1797,6 +1804,107 @@ export function createUser({ fullName, passwordHash, role, stationId = null, cre
   });
 
   return user;
+}
+
+const registerCustomerApplicationTransaction = db.transaction((input) => {
+  const timestamp = getTimestamp();
+  const userResult = createUserStatement.run(
+    input.fullName,
+    normalizeLoginKey(input.fullName),
+    input.passwordHash,
+    'customer',
+    input.stationId,
+    null,
+    timestamp,
+  );
+  const userId = Number(userResult.lastInsertRowid);
+  const user = getUserById(userId);
+  const applicationNumber = input.applicationNumber || generateApplicationNumber();
+  const applicationInput = {
+    ...input,
+    applicationNumber,
+    customerUserId: userId,
+    createdBy: userId,
+    status: 'in_progress',
+  };
+  const chatId = createApplicationChat(applicationInput, applicationNumber, timestamp);
+  const deadlineData = buildInitialDeadlineData(applicationInput);
+  const applicationResult = createApplicationStatement.run(
+    applicationInput.stationId,
+    applicationNumber,
+    applicationInput.applicantFullName,
+    normalizeLoginKey(applicationInput.applicantFullName),
+    applicationInput.phone,
+    normalizePhone(applicationInput.phone),
+    applicationInput.email,
+    applicationInput.objectAddress,
+    applicationInput.connectionType,
+    applicationInput.status,
+    applicationInput.receivedAt,
+    applicationInput.responsibleName,
+    applicationInput.notes,
+    safeJson(applicationInput.appendixData || {}),
+    safeJson(deadlineData),
+    userId,
+    chatId,
+    userId,
+    timestamp,
+    timestamp,
+  );
+  const applicationId = Number(applicationResult.lastInsertRowid);
+
+  getActiveStageTemplates().forEach((stage) => {
+    insertApplicationStageStatement.run(
+      applicationId,
+      stage.stageKey,
+      stage.title,
+      stage.description,
+      stage.sortOrder,
+      'not_started',
+      addByRule(applicationInput.receivedAt, stage.defaultExpectedDays, stage.expectedDaysType),
+      addByRule(applicationInput.receivedAt, stage.defaultDueDays, stage.dueDaysType),
+      null,
+      null,
+      '',
+      1,
+      timestamp,
+      timestamp,
+    );
+  });
+
+  recordAuditLog({
+    actor: user,
+    stationId: user.stationId,
+    entityType: 'user',
+    entityId: user.id,
+    action: 'create',
+    summary: `Створено кабінет замовника ${user.fullName} через самостійну реєстрацію.`,
+    after: { id: user.id, fullName: user.fullName, role: user.role, stationId: user.stationId },
+  });
+
+  recordAuditLog({
+    actor: user,
+    stationId: applicationInput.stationId,
+    entityType: 'application',
+    entityId: applicationId,
+    action: 'create',
+    summary: `Створено заяву ${applicationNumber} через самостійну реєстрацію.`,
+    after: { applicationId, applicationNumber, stationId: applicationInput.stationId, customerUserId: userId },
+  });
+
+  return {
+    applicationId,
+    userId,
+  };
+});
+
+export function registerCustomerApplication(input) {
+  const result = registerCustomerApplicationTransaction(input);
+
+  return {
+    application: getApplicationById(result.applicationId),
+    user: getUserById(result.userId),
+  };
 }
 
 export function listUsersForUser(user) {

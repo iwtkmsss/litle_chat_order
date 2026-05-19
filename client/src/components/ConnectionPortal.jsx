@@ -7,13 +7,12 @@ import {
   legalBase,
 } from '../connectionContent';
 import { ApplicationProgress } from './ApplicationProgress';
-import { LoginScreen } from './LoginScreen';
 
 const navItems = [
-  { id: 'connection', label: 'Приєднання' },
-  { id: 'status', label: 'Перевірити заяву' },
-  { id: 'documents', label: 'Документи' },
-  { id: 'login', label: 'Вхід' },
+  { id: 'connection', label: 'Приєднання', path: '/' },
+  { id: 'status', label: 'Перевірити заяву', path: '/status' },
+  { id: 'documents', label: 'Документи', path: '/documents' },
+  { id: 'login', label: 'Вхід', path: '/login' },
 ];
 
 const deadlineHighlights = [
@@ -23,8 +22,7 @@ const deadlineHighlights = [
   ['1', 'календарний день', 'тимчасове приєднання'],
 ];
 
-export function ConnectionPortal({ error, isSubmitting, onLogin }) {
-  const [activePage, setActivePage] = useState('connection');
+export function ConnectionPortal({ activePage = 'connection', onNavigate }) {
   const [activeModal, setActiveModal] = useState(null);
   const [lookupForm, setLookupForm] = useState({
     phone: '',
@@ -51,6 +49,10 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
     }
   }
 
+  function handleNavigate(item) {
+    onNavigate?.(item.path);
+  }
+
   return (
     <main className="workspace-shell public-shell">
       <nav className="public-nav" aria-label="Навігація сторінки приєднання">
@@ -64,7 +66,7 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
             <button
               className={activePage === item.id ? 'public-nav__link is-active' : 'public-nav__link'}
               key={item.id}
-              onClick={() => setActivePage(item.id)}
+              onClick={() => handleNavigate(item)}
               type="button"
             >
               {item.label}
@@ -231,28 +233,6 @@ export function ConnectionPortal({ error, isSubmitting, onLogin }) {
                 </span>
               ))}
             </div>
-          </section>
-        </section>
-      ) : null}
-
-      {activePage === 'login' ? (
-        <section className="public-page-narrow public-login-page public-centered-page">
-          <header className="public-page-header">
-            <span className="section-kicker">Особистий кабінет</span>
-            <h1>Вхід</h1>
-            <p className="muted-copy">
-              Вхід для працівників виробничо-технічного відділу та замовників,
-              яким створено кабінет.
-            </p>
-          </header>
-
-          <section className="surface-card login-aside-card">
-            <LoginScreen
-              embedded
-              error={error}
-              isSubmitting={isSubmitting}
-              onSubmit={onLogin}
-            />
           </section>
         </section>
       ) : null}

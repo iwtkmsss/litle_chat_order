@@ -72,6 +72,17 @@ export const api = {
     });
   },
 
+  listPublicStations() {
+    return request('/api/public/stations');
+  },
+
+  registerCustomerApplication(input) {
+    return request('/api/public/register', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
   listUsers() {
     return request('/api/users');
   },
