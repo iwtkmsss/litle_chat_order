@@ -1,20 +1,34 @@
 import {
+  applicationStatusDescriptions,
   applicationStatusLabels,
   connectionTypeLabels,
   deadlineStatusLabels,
+  roleLabels,
 } from '../../connectionContent';
-import { formatDate } from '../../utils';
+import { formatDate, formatDateTime } from '../../utils';
 
 export function ApplicationDetail({
   appendix3Fields,
+  availableStatusOptions,
   deadlineDataDraft,
   disabledDeadlineData,
+  disabledStatus,
   getQuestionnaireFields,
   getQuestionnaireTypeDetails,
   onSaveDeadlineData,
+  onSaveStatus,
   selectedApplication,
   setDeadlineDataDraft,
+  setStatusDraft,
+  statusDraft,
 }) {
+  const needsStatusComment = ['needs_clarification', 'rejected'].includes(statusDraft.status)
+    && statusDraft.status !== selectedApplication.status;
+  const isStatusCommentMissing = statusDraft.status === 'needs_clarification'
+    && statusDraft.status !== selectedApplication.status
+    && !statusDraft.comment.trim();
+  const canChangeStatus = availableStatusOptions.length > 0;
+
   return (
     <section className="surface-card manager-card">
       <div className="section-header">
@@ -35,9 +49,80 @@ export function ApplicationDetail({
         <span>Відповідальний: {selectedApplication.responsibleName || 'не вказано'}</span>
       </div>
 
+      <div className="appendix-data-view">
+        <h3>Статус заявки</h3>
+        {!selectedApplication.customerUserId ? (
+          <p className="stage-note">
+            Це pending-заява без створеного кабінету замовника. Після переходу в статус
+            “Прийнято в обробку” система створить або прив’яже кабінет замовника та підготує
+            email-повідомлення з доступом.
+          </p>
+        ) : null}
+        <p className="stage-note">
+          <strong>{applicationStatusLabels[selectedApplication.status] ?? selectedApplication.status}</strong>
+          <br />
+          {applicationStatusDescriptions[selectedApplication.status] ?? 'Поточний статус заявки.'}
+        </p>
+
+        <div className="stage-editor__controls">
+          <label className="field-block">
+            <span>Наступний статус</span>
+            <select
+              className="field-input"
+              disabled={disabledStatus || !canChangeStatus}
+              onChange={(event) =>
+                setStatusDraft((current) => ({
+                  ...current,
+                  status: event.target.value,
+                }))
+              }
+              value={statusDraft.status}
+            >
+              <option value={selectedApplication.status}>
+                {canChangeStatus ? 'Оберіть наступний статус' : 'Немає доступних переходів'}
+              </option>
+              {availableStatusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {needsStatusComment ? (
+            <label className="field-block field-block--wide">
+              <span>{statusDraft.status === 'needs_clarification' ? 'Що потрібно уточнити?' : 'Причина рішення'}</span>
+              <textarea
+                className="field-input field-textarea"
+                disabled={disabledStatus}
+                onChange={(event) =>
+                  setStatusDraft((current) => ({
+                    ...current,
+                    comment: event.target.value,
+                  }))
+                }
+                required={statusDraft.status === 'needs_clarification'}
+                rows={3}
+                value={statusDraft.comment}
+              />
+            </label>
+          ) : null}
+        </div>
+
+        <button
+          className="primary-button"
+          disabled={disabledStatus || !canChangeStatus || statusDraft.status === selectedApplication.status || isStatusCommentMissing}
+          onClick={onSaveStatus}
+          type="button"
+        >
+          {disabledStatus ? 'Збереження...' : 'Оновити статус'}
+        </button>
+      </div>
+
       {selectedApplication.notes ? <p className="stage-note">{selectedApplication.notes}</p> : null}
 
       <DeadlineChecks checks={selectedApplication.deadlineChecks} />
+      <StatusHistory entries={selectedApplication.statusHistory ?? []} />
       <DeadlineDataEditor
         deadlineDataDraft={deadlineDataDraft}
         disabled={disabledDeadlineData}
@@ -75,6 +160,33 @@ export function ApplicationDetail({
         </div>
       </div>
     </section>
+  );
+}
+
+function StatusHistory({ entries }) {
+  if (!entries.length) {
+    return null;
+  }
+
+  return (
+    <div className="appendix-data-view">
+      <h3>Історія статусів</h3>
+      <div className="email-log">
+        {entries.map((entry) => (
+          <article className="email-log-item" key={entry.id}>
+            <strong>
+              {applicationStatusLabels[entry.fromStatus] ?? entry.fromStatus ?? 'Створено'}
+              {' → '}
+              {applicationStatusLabels[entry.toStatus] ?? entry.toStatus}
+            </strong>
+            {entry.comment ? <span>{entry.comment}</span> : null}
+            <small>
+              {entry.changedByName || 'Система'} · {roleLabels[entry.changedByRole] ?? entry.changedByRole ?? 'система'} · {formatDateTime(entry.createdAt)}
+            </small>
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 

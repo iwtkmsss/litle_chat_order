@@ -269,6 +269,99 @@ export function mapApplicationToGeneratorQuestionnaire(application) {
   };
 }
 
+export function mapApplicationToStatementTemplateData(application) {
+  const data = mapApplicationToStatementDocument(application);
+
+  return {
+    customerName: data.applicant.name,
+    mailingAddress: data.applicant.mailingAddress,
+    customerEmail: data.applicant.email,
+    customerPhone: data.applicant.phone,
+    operatorName: data.operator.name,
+    objectName: data.object.name,
+    objectAddress: data.object.address,
+    connectionReason: data.request.reason,
+    representativeName: data.representative.name,
+    representativePhone: data.representative.phone,
+    representativeEmail: data.representative.email,
+    statementDate: data.request.date,
+    signerName: data.signatureName,
+  };
+}
+
+export function mapApplicationToConsumerQuestionnaireTemplateData(application) {
+  const data = mapApplicationToConsumerQuestionnaire(application);
+
+  return {
+    customerName: data.customer.name,
+    customerAddress: data.customer.address,
+    customerDistrict: data.customer.district,
+    customerEmail: data.customer.email,
+    customerPhone: data.customer.phone,
+    designOrgName: data.designOrganization.name,
+    designOrgAddress: data.designOrganization.address,
+    designOrgEmail: data.designOrganization.email,
+    designOrgPhone: data.designOrganization.phone,
+    objectName: data.object.name,
+    objectAddress: data.object.address,
+    constructionType: data.object.plannedWorks,
+    constructionStartYear: data.object.constructionStartYear,
+    commissioningYear: data.object.commissioningYear,
+    permittedHeatLoad: data.heatLoad.permittedHeatLoad,
+    heatSupplyContractNumber: data.heatLoad.heatSupplyContractNumber,
+    personalAccountNumber: data.heatLoad.personalAccountNumber,
+    additionalHeatLoad: data.heatLoad.additionalHeatLoad,
+    totalHeatLoad: data.heatLoad.totalHeatLoad,
+    heatingLoad: data.heatLoad.heatingLoad,
+    hotWaterMaxLoad: data.heatLoad.hotWaterMaxLoad,
+    hotWaterAverageLoad: data.heatLoad.hotWaterAverageLoad,
+    ventilationLoad: data.heatLoad.ventilationLoad,
+    technologyLoad: data.heatLoad.technologyLoad,
+    projectDeveloper: data.project.developer,
+    constructionExecutor: data.project.constructionExecutor,
+    existingHeatSourceDescription: data.technical.existingHeatSource,
+    heatObjectDescription: data.technical.heatObjectDescription,
+    thirdPartyConnection: data.technical.thirdPartyConnection,
+    notificationMethod: data.response.method,
+    notificationAddress: data.response.contact,
+    customerSignerName: data.customer.name,
+    designOrgSignerName: data.designOrganization.name,
+  };
+}
+
+export function mapApplicationToGeneratorQuestionnaireTemplateData(application) {
+  const data = mapApplicationToGeneratorQuestionnaire(application);
+
+  return {
+    customerName: data.customer.name,
+    customerAddress: data.customer.address,
+    customerDistrict: data.customer.district,
+    customerEmail: data.customer.email,
+    customerPhone: data.customer.phone,
+    designOrgName: data.designOrganization.name,
+    designOrgAddress: data.designOrganization.address,
+    designOrgEmail: data.designOrganization.email,
+    designOrgPhone: data.designOrganization.phone,
+    objectName: data.object.name,
+    objectAddress: data.object.address,
+    constructionType: data.object.plannedWorks,
+    constructionStartYear: data.object.constructionStartYear,
+    commissioningYear: data.object.commissioningYear,
+    permittedHeatLoad: data.capacity.permittedHeatLoad,
+    supplyOrTransportContractNumber: data.capacity.heatSupplyContractNumber,
+    additionalCapacity: data.capacity.additionalCapacity,
+    totalCapacity: data.capacity.totalCapacity,
+    projectDeveloper: data.project.developer,
+    constructionExecutor: data.project.constructionExecutor,
+    heatObjectDescription: data.technical.heatObjectDescription,
+    thirdPartyConnection: data.technical.thirdPartyConnection,
+    notificationMethod: data.response.method,
+    notificationAddress: data.response.contact,
+    customerSignerName: data.customer.name,
+    designOrgSignerName: data.designOrganization.name,
+  };
+}
+
 export function mapApplicationToTechnicalConditions(application) {
   const questionnaire = isGeneratorType(questionnaireOf(application).type)
     ? mapApplicationToGeneratorQuestionnaire(application)

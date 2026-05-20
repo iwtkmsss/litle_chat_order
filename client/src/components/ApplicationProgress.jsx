@@ -1,16 +1,22 @@
 import {
+  applicationStatusDescriptions,
   applicationStatusLabels,
   connectionTypeLabels,
   deadlineStatusLabels,
   stageStatusLabels,
 } from '../connectionContent';
 import { apiUrl } from '../api';
-import { formatDate } from '../utils';
+import { formatDate, formatDateTime } from '../utils';
 
 export function ApplicationProgress({ application, compact = false }) {
   if (!application) {
     return null;
   }
+
+  const visibleStatusHistory = application.statusHistory ?? [];
+  const latestClarification = visibleStatusHistory.find(
+    (entry) => entry.toStatus === 'needs_clarification' && entry.comment,
+  );
 
   return (
     <section className={compact ? 'application-progress application-progress--compact' : 'application-progress'}>
@@ -19,6 +25,9 @@ export function ApplicationProgress({ application, compact = false }) {
           <span className="section-kicker">Заява {application.applicationNumber}</span>
           <h2>{application.applicantFullName}</h2>
           <p className="muted-copy">{application.objectAddress}</p>
+          <p className="muted-copy">
+            {applicationStatusDescriptions[application.status] ?? 'Поточний статус заявки.'}
+          </p>
         </div>
 
         <div className="summary-pill-group">
@@ -30,6 +39,33 @@ export function ApplicationProgress({ application, compact = false }) {
         </div>
       </div>
 
+      {application.status === 'needs_clarification' && latestClarification ? (
+        <p className="stage-note">
+          <strong>Потрібно уточнення:</strong>
+          <br />
+          {latestClarification.comment}
+        </p>
+      ) : null}
+
+      {visibleStatusHistory.length > 0 && !compact ? (
+        <div className="appendix-data-view">
+          <h3>Історія статусів</h3>
+          <div className="email-log">
+            {visibleStatusHistory.map((entry) => (
+              <article className="email-log-item" key={entry.id}>
+                <strong>
+                  {applicationStatusLabels[entry.fromStatus] ?? entry.fromStatus ?? 'Створено'}
+                  {' → '}
+                  {applicationStatusLabels[entry.toStatus] ?? entry.toStatus}
+                </strong>
+                {entry.comment ? <span>{entry.comment}</span> : null}
+                <small>{formatDateTime(entry.createdAt)}</small>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="stage-timeline">
         {application.stages.map((stage) => (
           <article className={`stage-row stage-row--${stage.status}`} key={stage.id}>
@@ -37,7 +73,10 @@ export function ApplicationProgress({ application, compact = false }) {
             <div className="stage-row__body">
               <div className="stage-row__head">
                 <h3>{stage.title}</h3>
-                <span className="role-badge">{stageStatusLabels[stage.status] ?? stage.status}</span>
+                <div className="summary-pill-group">
+                  {stage.isOptional ? <span className="role-badge">За необхідності</span> : null}
+                  <span className="role-badge">{stageStatusLabels[stage.status] ?? stage.status}</span>
+                </div>
               </div>
 
               {!compact ? <p className="muted-copy">{stage.description}</p> : null}

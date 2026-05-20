@@ -162,6 +162,23 @@ export const api = {
     });
   },
 
+  activatePendingApplicationAccess(token) {
+    return request(`/api/public/application-access/${encodeURIComponent(token)}`, {
+      method: 'POST',
+    });
+  },
+
+  getPendingApplication() {
+    return request('/api/pending/application');
+  },
+
+  updatePendingApplication(input) {
+    return request('/api/pending/application', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  },
+
   listApplications() {
     return request('/api/applications');
   },
@@ -172,6 +189,13 @@ export const api = {
 
   createApplication(input) {
     return request('/api/applications', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  createCustomerApplication(input) {
+    return request('/api/customer/applications', {
       method: 'POST',
       body: JSON.stringify(input),
     });

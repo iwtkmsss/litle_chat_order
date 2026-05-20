@@ -4,6 +4,18 @@ import {
   stageStatusOptions,
 } from '../../connectionContent';
 
+function getToday() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getStageStatusOptions(stage, draft) {
+  return stageStatusOptions.filter((option) =>
+    option.value !== 'not_required'
+    || stage.isOptional
+    || draft.status === 'not_required',
+  );
+}
+
 export function ApplicationStagesPanel({
   getStageDraft,
   onSaveStage,
@@ -34,6 +46,7 @@ export function ApplicationStagesPanel({
                 <div>
                   <h3>{stage.title}</h3>
                   <p className="muted-copy">{stage.description}</p>
+                  {stage.isOptional ? <span className="role-badge">За необхідності</span> : null}
                 </div>
                 <StatusPill status={stage.deadlineStatus} />
               </div>
@@ -43,10 +56,18 @@ export function ApplicationStagesPanel({
                   <span>Стадія виконання</span>
                   <select
                     className="field-input"
-                    onChange={(event) => updateStageDraft(stage.id, { status: event.target.value })}
+                    onChange={(event) => {
+                      const nextStatus = event.target.value;
+                      updateStageDraft(stage.id, {
+                        status: nextStatus,
+                        completedAt: nextStatus === 'completed'
+                          ? draft.completedAt || getToday()
+                          : '',
+                      });
+                    }}
                     value={draft.status}
                   >
-                    {stageStatusOptions.map((option) => (
+                    {getStageStatusOptions(stage, draft).map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -88,6 +109,7 @@ export function ApplicationStagesPanel({
                   <span>Виконано, дата виконання</span>
                   <input
                     className="field-input"
+                    disabled={draft.status !== 'completed'}
                     onChange={(event) => updateStageDraft(stage.id, { completedAt: event.target.value })}
                     type="date"
                     value={draft.completedAt}

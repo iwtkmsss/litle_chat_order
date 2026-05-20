@@ -6,6 +6,7 @@ import { CustomerPage } from './pages/CustomerPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { ManagerPage } from './pages/ManagerPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { PendingApplicationAccessPage } from './pages/PendingApplicationAccessPage';
 import { PublicConnectionPage } from './pages/PublicConnectionPage';
 import { StatusPage } from './pages/StatusPage';
 
@@ -26,6 +27,12 @@ function normalizePathname(pathname) {
 
 function getRoute() {
   const path = normalizePathname(window.location.pathname);
+  const pendingAccessMatch = path.match(/^\/application-access\/([^/]+)$/);
+
+  if (pendingAccessMatch) {
+    return { type: 'pendingAccess', path, token: decodeURIComponent(pendingAccessMatch[1]) };
+  }
+
   const route = routes.get(path);
 
   return route ? { ...route, path } : { type: 'notFound', path };
@@ -80,6 +87,7 @@ function RedirectShell() {
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [pendingAccess, setPendingAccess] = useState(null);
   const [isBooting, setIsBooting] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
@@ -111,12 +119,14 @@ export default function App() {
         }
 
         setUser(response.user);
+        setPendingAccess(response.pendingAccess ?? null);
       } catch (error) {
         if (!active) {
           return;
         }
 
         setUser(null);
+        setPendingAccess(null);
       } finally {
         if (active) {
           setIsBooting(false);
@@ -162,6 +172,7 @@ export default function App() {
     try {
       const response = await api.login(credentials);
       setUser(response.user);
+      setPendingAccess(null);
       navigate(getCabinetPath(response.user), { replace: true });
     } catch (error) {
       setLoginError(error.message);
@@ -177,8 +188,12 @@ export default function App() {
 
     try {
       const response = await api.registerCustomerApplication(input);
-      setUser(response.user);
-      navigate(getCabinetPath(response.user), { replace: true });
+      setPendingAccess(response.pendingAccess ?? {
+        applicationId: response.application.id,
+        applicationNumber: response.application.applicationNumber,
+        path: '/application-access/session',
+      });
+      return response;
     } catch (error) {
       setRegistrationError(error.message);
     } finally {
@@ -189,6 +204,7 @@ export default function App() {
   async function handleLogout() {
     await api.logout();
     setUser(null);
+    setPendingAccess(null);
     setLoginError('');
     setRegistrationError('');
     navigate('/login', { replace: true });
@@ -221,14 +237,14 @@ export default function App() {
 
   if (route.type === 'public') {
     if (route.page === 'status') {
-      return <StatusPage onNavigate={navigate} />;
+      return <StatusPage onNavigate={navigate} pendingAccess={pendingAccess} user={user} />;
     }
 
     if (route.page === 'documents') {
-      return <DocumentsPage onNavigate={navigate} />;
+      return <DocumentsPage onNavigate={navigate} pendingAccess={pendingAccess} user={user} />;
     }
 
-    return <PublicConnectionPage onNavigate={navigate} />;
+    return <PublicConnectionPage onNavigate={navigate} pendingAccess={pendingAccess} user={user} />;
   }
 
   if (isBooting) {
@@ -240,6 +256,17 @@ export default function App() {
       <NotFoundPage
         cabinetPath={user ? getCabinetPath(user) : null}
         onNavigate={navigate}
+        user={user}
+      />
+    );
+  }
+
+  if (route.type === 'pendingAccess') {
+    return (
+      <PendingApplicationAccessPage
+        onNavigate={navigate}
+        onPendingAccessChange={setPendingAccess}
+        token={route.token}
         user={user}
       />
     );

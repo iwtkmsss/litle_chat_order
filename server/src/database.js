@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { createSessionToken, normalizeLoginKey } from './auth.js';
@@ -8,13 +9,19 @@ import {
   generatedDocumentsDir,
   uploadsDir,
 } from './config.js';
+import {
+  APPLICATION_STATUS_LABELS,
+  APPLICATION_STATUSES,
+  assertApplicationStatusTransition,
+  isCustomerVisibleStatusComment,
+} from './applicationStatusWorkflow.js';
 
 fs.mkdirSync(dataDir, { recursive: true });
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(generatedDocumentsDir, { recursive: true });
 
-const schemaVersion = 3;
+const schemaVersion = 6;
 const db = new Database(databasePath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -27,12 +34,37 @@ function tableExists(tableName) {
   );
 }
 
+function getTableColumnNames(tableName) {
+  if (!tableExists(tableName)) {
+    return new Set();
+  }
+
+  return new Set(
+    db
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all()
+      .map((column) => column.name),
+  );
+}
+
+function addColumnIfMissing(tableName, columnName, definition) {
+  const columns = getTableColumnNames(tableName);
+
+  if (columns.has(columnName)) {
+    return;
+  }
+
+  db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+}
+
 function resetLegacyDatabase() {
   db.pragma('foreign_keys = OFF');
   db.exec(`
     DROP TABLE IF EXISTS email_notifications;
     DROP TABLE IF EXISTS generated_documents;
     DROP TABLE IF EXISTS audit_log;
+    DROP TABLE IF EXISTS pending_application_sessions;
+    DROP TABLE IF EXISTS pending_application_access_tokens;
     DROP TABLE IF EXISTS application_stages;
     DROP TABLE IF EXISTS applications;
     DROP TABLE IF EXISTS attachments;
@@ -43,6 +75,7 @@ function resetLegacyDatabase() {
     DROP TABLE IF EXISTS users;
     DROP TABLE IF EXISTS stage_templates;
     DROP TABLE IF EXISTS deadline_rules;
+    DROP TABLE IF EXISTS internal_migrations;
     DROP TABLE IF EXISTS system_settings;
     DROP TABLE IF EXISTS stations;
   `);
@@ -50,11 +83,14 @@ function resetLegacyDatabase() {
   db.pragma('user_version = 0');
 }
 
-const currentVersion = db.pragma('user_version', { simple: true });
+let currentVersion = db.pragma('user_version', { simple: true });
 
-if ((currentVersion > 0 && currentVersion < schemaVersion) || (currentVersion === 0 && tableExists('users'))) {
+if ((currentVersion > 0 && currentVersion < 3) || (currentVersion === 0 && tableExists('users'))) {
   resetLegacyDatabase();
+  currentVersion = 0;
 }
+
+const applicationStatusConstraint = APPLICATION_STATUSES.map((status) => `'${status}'`).join(', ');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS stations (
@@ -75,6 +111,8 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,
     full_name_normalized TEXT NOT NULL UNIQUE,
+    login TEXT NOT NULL DEFAULT '',
+    login_normalized TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'customer')),
     station_id INTEGER,
@@ -106,6 +144,11 @@ db.exec(`
     FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
   );
 
+  CREATE TABLE IF NOT EXISTS internal_migrations (
+    key TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS deadline_rules (
     key TEXT PRIMARY KEY,
     label TEXT NOT NULL,
@@ -129,6 +172,7 @@ db.exec(`
     expected_days_type TEXT NOT NULL DEFAULT 'calendar_days' CHECK (expected_days_type IN ('calendar_days', 'business_days', 'months')),
     default_due_days INTEGER NOT NULL DEFAULT 0,
     due_days_type TEXT NOT NULL DEFAULT 'calendar_days' CHECK (due_days_type IN ('calendar_days', 'business_days', 'months')),
+    is_optional INTEGER NOT NULL DEFAULT 0,
     is_active INTEGER NOT NULL DEFAULT 1,
     updated_by INTEGER,
     created_at TEXT NOT NULL,
@@ -141,7 +185,7 @@ db.exec(`
     title TEXT NOT NULL,
     description TEXT NOT NULL,
     station_id INTEGER,
-    created_by INTEGER NOT NULL,
+    created_by INTEGER,
     created_at TEXT NOT NULL,
     FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE SET NULL,
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
@@ -188,7 +232,7 @@ db.exec(`
     email TEXT NOT NULL,
     object_address TEXT NOT NULL,
     connection_type TEXT NOT NULL CHECK (connection_type IN ('standard', 'temporary')),
-    status TEXT NOT NULL CHECK (status IN ('draft', 'in_progress', 'completed', 'rejected')),
+    status TEXT NOT NULL CHECK (status IN (${applicationStatusConstraint})),
     received_at TEXT NOT NULL,
     responsible_name TEXT NOT NULL,
     notes TEXT NOT NULL,
@@ -196,13 +240,27 @@ db.exec(`
     deadline_data TEXT NOT NULL DEFAULT '{}',
     customer_user_id INTEGER,
     chat_id INTEGER NOT NULL UNIQUE,
-    created_by INTEGER NOT NULL,
+    created_by INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE RESTRICT,
     FOREIGN KEY (customer_user_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+  );
+
+  CREATE TABLE IF NOT EXISTS application_status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL,
+    from_status TEXT,
+    to_status TEXT NOT NULL CHECK (to_status IN (${applicationStatusConstraint})),
+    comment TEXT NOT NULL DEFAULT '',
+    changed_by_user_id INTEGER,
+    changed_by_role TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    is_visible_to_customer INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS application_stages (
@@ -219,10 +277,36 @@ db.exec(`
     completed_at TEXT,
     public_note TEXT NOT NULL,
     is_visible INTEGER NOT NULL DEFAULT 1,
+    is_optional INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE (application_id, stage_key),
     FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS pending_application_access_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    last_used_at TEXT,
+    created_ip TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS pending_application_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_token TEXT NOT NULL UNIQUE,
+    application_id INTEGER NOT NULL,
+    access_token_id INTEGER,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    last_seen_at TEXT NOT NULL,
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+    FOREIGN KEY (access_token_id) REFERENCES pending_application_access_tokens(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS generated_documents (
@@ -251,6 +335,8 @@ db.exec(`
     recipient_name TEXT NOT NULL,
     subject TEXT NOT NULL,
     body TEXT NOT NULL,
+    notification_type TEXT NOT NULL DEFAULT 'stage_updated',
+    payload TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL CHECK (status IN ('prepared', 'skipped', 'sent')),
     created_at TEXT NOT NULL,
     FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
@@ -275,7 +361,270 @@ db.exec(`
   );
 `);
 
-db.pragma(`user_version = ${schemaVersion}`);
+function migrateApplicationStatusConstraintToV4() {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'applications'")
+    .get();
+
+  if (!row?.sql || row.sql.includes("'submitted'")) {
+    return;
+  }
+
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.exec(`
+      BEGIN;
+
+      CREATE TABLE applications_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        station_id INTEGER NOT NULL,
+        application_number TEXT NOT NULL UNIQUE,
+        applicant_full_name TEXT NOT NULL,
+        applicant_full_name_normalized TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        phone_normalized TEXT NOT NULL,
+        email TEXT NOT NULL,
+        object_address TEXT NOT NULL,
+        connection_type TEXT NOT NULL CHECK (connection_type IN ('standard', 'temporary')),
+        status TEXT NOT NULL CHECK (status IN (${applicationStatusConstraint})),
+        received_at TEXT NOT NULL,
+        responsible_name TEXT NOT NULL,
+        notes TEXT NOT NULL,
+        appendix_data TEXT NOT NULL DEFAULT '{}',
+        deadline_data TEXT NOT NULL DEFAULT '{}',
+        customer_user_id INTEGER,
+        chat_id INTEGER NOT NULL UNIQUE,
+        created_by INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE RESTRICT,
+        FOREIGN KEY (customer_user_id) REFERENCES users(id) ON DELETE SET NULL,
+        FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+      );
+
+      INSERT INTO applications_new (
+        id,
+        station_id,
+        application_number,
+        applicant_full_name,
+        applicant_full_name_normalized,
+        phone,
+        phone_normalized,
+        email,
+        object_address,
+        connection_type,
+        status,
+        received_at,
+        responsible_name,
+        notes,
+        appendix_data,
+        deadline_data,
+        customer_user_id,
+        chat_id,
+        created_by,
+        created_at,
+        updated_at
+      )
+      SELECT
+        id,
+        station_id,
+        application_number,
+        applicant_full_name,
+        applicant_full_name_normalized,
+        phone,
+        phone_normalized,
+        email,
+        object_address,
+        connection_type,
+        status,
+        received_at,
+        responsible_name,
+        notes,
+        appendix_data,
+        deadline_data,
+        customer_user_id,
+        chat_id,
+        created_by,
+        created_at,
+        updated_at
+      FROM applications;
+
+      DROP TABLE applications;
+      ALTER TABLE applications_new RENAME TO applications;
+      COMMIT;
+    `);
+  } catch (error) {
+    if (db.inTransaction) {
+      db.exec('ROLLBACK;');
+    }
+    throw error;
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+}
+
+migrateApplicationStatusConstraintToV4();
+
+function migratePendingApplicationSupportToV6() {
+  addColumnIfMissing('users', 'login', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('users', 'login_normalized', "TEXT NOT NULL DEFAULT ''");
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_login_normalized_active_unique
+    ON users(login_normalized)
+    WHERE login_normalized <> '' AND deleted_at IS NULL;
+  `);
+
+  const chatsRow = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chats'")
+    .get();
+  const applicationsRow = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'applications'")
+    .get();
+
+  const shouldMigrateChats = Boolean(chatsRow?.sql?.includes('created_by INTEGER NOT NULL'));
+  const shouldMigrateApplications = Boolean(applicationsRow?.sql?.includes('created_by INTEGER NOT NULL'));
+
+  if (!shouldMigrateChats && !shouldMigrateApplications) {
+    return;
+  }
+
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.exec('BEGIN;');
+
+    if (shouldMigrateChats) {
+      db.exec(`
+        CREATE TABLE chats_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          station_id INTEGER,
+          created_by INTEGER,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE SET NULL,
+          FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        INSERT INTO chats_new (id, title, description, station_id, created_by, created_at)
+        SELECT id, title, description, station_id, created_by, created_at
+        FROM chats;
+
+        DROP TABLE chats;
+        ALTER TABLE chats_new RENAME TO chats;
+      `);
+    }
+
+    if (shouldMigrateApplications) {
+      db.exec(`
+        CREATE TABLE applications_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          station_id INTEGER NOT NULL,
+          application_number TEXT NOT NULL UNIQUE,
+          applicant_full_name TEXT NOT NULL,
+          applicant_full_name_normalized TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          phone_normalized TEXT NOT NULL,
+          email TEXT NOT NULL,
+          object_address TEXT NOT NULL,
+          connection_type TEXT NOT NULL CHECK (connection_type IN ('standard', 'temporary')),
+          status TEXT NOT NULL CHECK (status IN (${applicationStatusConstraint})),
+          received_at TEXT NOT NULL,
+          responsible_name TEXT NOT NULL,
+          notes TEXT NOT NULL,
+          appendix_data TEXT NOT NULL DEFAULT '{}',
+          deadline_data TEXT NOT NULL DEFAULT '{}',
+          customer_user_id INTEGER,
+          chat_id INTEGER NOT NULL UNIQUE,
+          created_by INTEGER,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (station_id) REFERENCES stations(id) ON DELETE RESTRICT,
+          FOREIGN KEY (customer_user_id) REFERENCES users(id) ON DELETE SET NULL,
+          FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+        );
+
+        INSERT INTO applications_new (
+          id,
+          station_id,
+          application_number,
+          applicant_full_name,
+          applicant_full_name_normalized,
+          phone,
+          phone_normalized,
+          email,
+          object_address,
+          connection_type,
+          status,
+          received_at,
+          responsible_name,
+          notes,
+          appendix_data,
+          deadline_data,
+          customer_user_id,
+          chat_id,
+          created_by,
+          created_at,
+          updated_at
+        )
+        SELECT
+          id,
+          station_id,
+          application_number,
+          applicant_full_name,
+          applicant_full_name_normalized,
+          phone,
+          phone_normalized,
+          email,
+          object_address,
+          connection_type,
+          status,
+          received_at,
+          responsible_name,
+          notes,
+          appendix_data,
+          deadline_data,
+          customer_user_id,
+          chat_id,
+          created_by,
+          created_at,
+          updated_at
+        FROM applications;
+
+        DROP TABLE applications;
+        ALTER TABLE applications_new RENAME TO applications;
+      `);
+    }
+
+    db.exec('COMMIT;');
+  } catch (error) {
+    if (db.inTransaction) {
+      db.exec('ROLLBACK;');
+    }
+    throw error;
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+}
+
+migratePendingApplicationSupportToV6();
+
+function migrateApplicationStagesToV5() {
+  addColumnIfMissing('stage_templates', 'is_optional', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('application_stages', 'is_optional', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('email_notifications', 'notification_type', "TEXT NOT NULL DEFAULT 'stage_updated'");
+  addColumnIfMissing('email_notifications', 'payload', "TEXT NOT NULL DEFAULT '{}'");
+
+  db.prepare(`
+    UPDATE application_stages
+    SET is_optional = 1
+    WHERE stage_key IN ('land_relations_design', 'urban_conditions')
+  `).run();
+}
+
+migrateApplicationStagesToV5();
 
 const defaultDeadlineRules = [
   {
@@ -315,75 +664,83 @@ const defaultDeadlineRules = [
 export const defaultStageTemplates = [
   {
     key: 'contract_terms_invoice_ready',
-    title: 'Готовність проекту договору на приєднання, проекту технічних умов на приєднання та рахунку щодо оплати вартості послуги з надання замовнику технічних умов на приєднання.',
-    description: 'Етап підготовки проекту договору, технічних умов та рахунку на оплату послуги з надання технічних умов.',
+    title: 'Готовність проєкту договору, технічних умов та рахунку',
+    description: 'Відображає готовність проєкту договору на приєднання, проєкту технічних умов на приєднання та рахунку щодо оплати вартості послуг з надання технічних умов.',
     expectedDays: 10,
     expectedUnit: 'business_days',
     dueDays: 10,
     dueUnit: 'business_days',
+    isOptional: false,
   },
   {
     key: 'land_relations_design',
-    title: 'Проектування та здійснення заходів стосовно оформлення земельних відносин щодо траси прокладання МО (мереж Оператора) (за необхідності).',
-    description: 'Оформлення земельних питань щодо траси прокладання мереж Оператора, якщо це потрібно для конкретного об’єкта.',
+    title: 'Оформлення земельних відносин щодо траси МО',
+    description: 'Проєктування та здійснення заходів щодо оформлення земельних відносин стосовно траси прокладання мереж Оператора.',
     expectedDays: 0,
     expectedUnit: 'calendar_days',
     dueDays: 0,
     dueUnit: 'calendar_days',
+    isOptional: true,
   },
   {
     key: 'urban_conditions',
-    title: 'Отримання містобудівних умов та обмежень забудови земельної ділянки, де планується прокладання МО (за необхідності).',
-    description: 'Етап отримання містобудівних умов та обмежень для земельної ділянки, якщо цього потребує процедура приєднання.',
+    title: 'Отримання містобудівних умов та обмежень',
+    description: 'Отримання містобудівних умов та обмежень забудови земельної ділянки, де планується прокладання мереж Оператора.',
     expectedDays: 0,
     expectedUnit: 'calendar_days',
     dueDays: 0,
     dueUnit: 'calendar_days',
+    isOptional: true,
   },
   {
     key: 'engineering_surveys',
-    title: 'Виконання інженерних вишукувань.',
-    description: 'Виконання інженерних вишукувань для підготовки проектної документації.',
+    title: 'Виконання інженерних вишукувань',
+    description: 'Відображає стан виконання інженерних вишукувань, необхідних для реалізації заходів з приєднання.',
     expectedDays: 0,
     expectedUnit: 'calendar_days',
     dueDays: 0,
     dueUnit: 'calendar_days',
+    isOptional: false,
   },
   {
     key: 'network_project_estimate',
-    title: 'Розробка та затвердження проекту МО та його кошторисної частини.',
-    description: 'Розробка та затвердження проекту мереж Оператора і кошторисної частини проекту.',
+    title: 'Розробка та затвердження проєкту МО і кошторисної частини',
+    description: 'Розробка та затвердження проєкту мереж Оператора та його кошторисної частини.',
     expectedDays: 0,
     expectedUnit: 'calendar_days',
     dueDays: 0,
     dueUnit: 'calendar_days',
+    isOptional: false,
   },
   {
     key: 'project_expertise_approval',
-    title: 'Експертиза та погодження проектної документації з іншими заінтересованими сторонами.',
-    description: 'Проведення експертизи і погодження проектної документації із заінтересованими сторонами.',
+    title: 'Експертиза та погодження проєктної документації',
+    description: 'Експертиза та погодження проєктної документації з іншими заінтересованими сторонами.',
     expectedDays: 0,
     expectedUnit: 'calendar_days',
     dueDays: 0,
     dueUnit: 'calendar_days',
+    isOptional: false,
   },
   {
     key: 'customer_network_connection',
-    title: 'Підключення МЗ (мереж Замовника) у точці приєднання.',
+    title: 'Підключення МЗ у точці приєднання',
     description: 'Підключення мереж Замовника до теплових мереж Оператора у точці приєднання.',
     expectedDays: 0,
     expectedUnit: 'calendar_days',
     dueDays: 0,
     dueUnit: 'calendar_days',
+    isOptional: false,
   },
   {
     key: 'primary_heat_carrier_launch',
-    title: 'Первинний пуск теплоносія.',
+    title: 'Первинний пуск теплоносія',
     description: 'Первинний пуск теплоносія після виконання необхідних робіт та погоджень.',
     expectedDays: 0,
     expectedUnit: 'calendar_days',
     dueDays: 0,
     dueUnit: 'calendar_days',
+    isOptional: false,
   },
 ];
 
@@ -457,10 +814,11 @@ function seedDefaults() {
       expected_days_type,
       default_due_days,
       due_days_type,
+      is_optional,
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   defaultStageTemplates.forEach((stage, index) => {
@@ -473,10 +831,52 @@ function seedDefaults() {
       stage.expectedUnit,
       stage.dueDays,
       stage.dueUnit,
+      stage.isOptional ? 1 : 0,
       timestamp,
       timestamp,
     );
   });
+
+  const stageSyncKey = 'normative_stage_templates_v5';
+  const stageTemplatesSynced = db
+    .prepare('SELECT key FROM internal_migrations WHERE key = ?')
+    .get(stageSyncKey);
+
+  if (currentVersion < 5 || !stageTemplatesSynced) {
+    const updateStageDefaults = db.prepare(`
+      UPDATE stage_templates
+      SET title = ?,
+          description = ?,
+          sort_order = ?,
+          default_expected_days = ?,
+          expected_days_type = ?,
+          default_due_days = ?,
+          due_days_type = ?,
+          is_optional = ?,
+          updated_at = ?
+      WHERE stage_key = ?
+    `);
+
+    defaultStageTemplates.forEach((stage, index) => {
+      updateStageDefaults.run(
+        stage.title,
+        stage.description,
+        index + 1,
+        stage.expectedDays,
+        stage.expectedUnit,
+        stage.dueDays,
+        stage.dueUnit,
+        stage.isOptional ? 1 : 0,
+        timestamp,
+        stage.key,
+      );
+    });
+
+    db.prepare(`
+      INSERT OR REPLACE INTO internal_migrations (key, applied_at)
+      VALUES (?, ?)
+    `).run(stageSyncKey, timestamp);
+  }
 
   const insertSetting = db.prepare(`
     INSERT OR IGNORE INTO system_settings (
@@ -515,6 +915,8 @@ function seedDefaults() {
 }
 
 seedDefaults();
+
+db.pragma(`user_version = ${schemaVersion}`);
 
 function normalizePhone(value) {
   return String(value ?? '').replace(/\D/g, '');
@@ -637,6 +1039,8 @@ const userFields = `
   users.id,
   users.full_name AS fullName,
   users.full_name_normalized AS fullNameNormalized,
+  users.login,
+  users.login_normalized AS loginNormalized,
   users.password_hash AS passwordHash,
   users.role,
   users.station_id AS stationId,
@@ -647,15 +1051,15 @@ const userFields = `
 `;
 
 const createUserStatement = db.prepare(`
-  INSERT INTO users (full_name, full_name_normalized, password_hash, role, station_id, created_by, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO users (full_name, full_name_normalized, login, login_normalized, password_hash, role, station_id, created_by, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const findUserByNormalizedNameStatement = db.prepare(`
   SELECT ${userFields}
   FROM users
   LEFT JOIN stations ON stations.id = users.station_id
-  WHERE users.full_name_normalized = ? AND users.deleted_at IS NULL
+  WHERE (users.full_name_normalized = ? OR users.login_normalized = ?) AND users.deleted_at IS NULL
 `);
 
 const getUserByIdStatement = db.prepare(`
@@ -797,6 +1201,7 @@ const listStageTemplatesStatement = db.prepare(`
     expected_days_type AS expectedDaysType,
     default_due_days AS defaultDueDays,
     due_days_type AS dueDaysType,
+    is_optional AS isOptional,
     is_active AS isActive,
     updated_by AS updatedBy,
     created_at AS createdAt,
@@ -816,6 +1221,7 @@ const getStageTemplateByIdStatement = db.prepare(`
     expected_days_type AS expectedDaysType,
     default_due_days AS defaultDueDays,
     due_days_type AS dueDaysType,
+    is_optional AS isOptional,
     is_active AS isActive,
     updated_by AS updatedBy,
     created_at AS createdAt,
@@ -833,6 +1239,7 @@ const updateStageTemplateStatement = db.prepare(`
       expected_days_type = ?,
       default_due_days = ?,
       due_days_type = ?,
+      is_optional = ?,
       is_active = ?,
       updated_by = ?,
       updated_at = ?
@@ -1062,10 +1469,11 @@ const insertApplicationStageStatement = db.prepare(`
     completed_at,
     public_note,
     is_visible,
+    is_optional,
     created_at,
     updated_at
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const applicationSelectFields = `
@@ -1153,6 +1561,7 @@ const listApplicationStagesStatement = db.prepare(`
     completed_at AS completedAt,
     public_note AS publicNote,
     is_visible AS isVisible,
+    is_optional AS isOptional,
     created_at AS createdAt,
     updated_at AS updatedAt
   FROM application_stages
@@ -1175,6 +1584,7 @@ const getApplicationStageByIdStatement = db.prepare(`
     completed_at AS completedAt,
     public_note AS publicNote,
     is_visible AS isVisible,
+    is_optional AS isOptional,
     created_at AS createdAt,
     updated_at AS updatedAt
   FROM application_stages
@@ -1228,6 +1638,38 @@ const updateApplicationStatement = db.prepare(`
   WHERE id = ?
 `);
 
+const insertApplicationStatusHistoryStatement = db.prepare(`
+  INSERT INTO application_status_history (
+    application_id,
+    from_status,
+    to_status,
+    comment,
+    changed_by_user_id,
+    changed_by_role,
+    created_at,
+    is_visible_to_customer
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
+const listApplicationStatusHistoryStatement = db.prepare(`
+  SELECT
+    application_status_history.id,
+    application_status_history.application_id AS applicationId,
+    application_status_history.from_status AS fromStatus,
+    application_status_history.to_status AS toStatus,
+    application_status_history.comment,
+    application_status_history.changed_by_user_id AS changedByUserId,
+    users.full_name AS changedByName,
+    application_status_history.changed_by_role AS changedByRole,
+    application_status_history.created_at AS createdAt,
+    application_status_history.is_visible_to_customer AS isVisibleToCustomer
+  FROM application_status_history
+  LEFT JOIN users ON users.id = application_status_history.changed_by_user_id
+  WHERE application_status_history.application_id = ?
+  ORDER BY application_status_history.created_at DESC, application_status_history.id DESC
+`);
+
 const insertEmailNotificationStatement = db.prepare(`
   INSERT INTO email_notifications (
     application_id,
@@ -1236,10 +1678,12 @@ const insertEmailNotificationStatement = db.prepare(`
     recipient_name,
     subject,
     body,
+    notification_type,
+    payload,
     status,
     created_at
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const listEmailNotificationsStatement = db.prepare(`
@@ -1251,11 +1695,101 @@ const listEmailNotificationsStatement = db.prepare(`
     recipient_name AS recipientName,
     subject,
     body,
+    notification_type AS notificationType,
+    payload,
     status,
     created_at AS createdAt
   FROM email_notifications
   WHERE application_id = ?
   ORDER BY created_at DESC, id DESC
+`);
+
+const insertPendingAccessTokenStatement = db.prepare(`
+  INSERT INTO pending_application_access_tokens (
+    application_id,
+    token_hash,
+    is_active,
+    created_at,
+    expires_at,
+    created_ip,
+    user_agent
+  )
+  VALUES (?, ?, 1, ?, ?, ?, ?)
+`);
+
+const getPendingAccessTokenByHashStatement = db.prepare(`
+  SELECT
+    id,
+    application_id AS applicationId,
+    token_hash AS tokenHash,
+    is_active AS isActive,
+    created_at AS createdAt,
+    expires_at AS expiresAt,
+    last_used_at AS lastUsedAt
+  FROM pending_application_access_tokens
+  WHERE token_hash = ?
+`);
+
+const updatePendingAccessTokenSeenStatement = db.prepare(`
+  UPDATE pending_application_access_tokens
+  SET last_used_at = ?
+  WHERE id = ?
+`);
+
+const deactivatePendingTokensForApplicationStatement = db.prepare(`
+  UPDATE pending_application_access_tokens
+  SET is_active = 0
+  WHERE application_id = ?
+`);
+
+const insertPendingSessionStatement = db.prepare(`
+  INSERT INTO pending_application_sessions (
+    session_token,
+    application_id,
+    access_token_id,
+    created_at,
+    expires_at,
+    last_seen_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?)
+`);
+
+const findPendingSessionStatement = db.prepare(`
+  SELECT
+    id,
+    session_token AS sessionToken,
+    application_id AS applicationId,
+    access_token_id AS accessTokenId,
+    created_at AS createdAt,
+    expires_at AS expiresAt,
+    last_seen_at AS lastSeenAt
+  FROM pending_application_sessions
+  WHERE session_token = ?
+`);
+
+const updatePendingSessionSeenStatement = db.prepare(`
+  UPDATE pending_application_sessions
+  SET last_seen_at = ?
+  WHERE session_token = ?
+`);
+
+const deletePendingSessionStatement = db.prepare(`
+  DELETE FROM pending_application_sessions
+  WHERE session_token = ?
+`);
+
+const deletePendingSessionsForApplicationStatement = db.prepare(`
+  DELETE FROM pending_application_sessions
+  WHERE application_id = ?
+`);
+
+const publicApplicationLookupByEmailStatement = db.prepare(`
+  SELECT id
+  FROM applications
+  WHERE application_number = ?
+    AND lower(email) = lower(?)
+  ORDER BY updated_at DESC, id DESC
+  LIMIT 1
 `);
 
 const publicApplicationLookupStatement = db.prepare(`
@@ -1395,6 +1929,8 @@ function mapUser(row) {
     full_name: row.fullName,
     fullName: row.fullName,
     full_name_normalized: row.fullNameNormalized,
+    login: row.login,
+    loginNormalized: row.loginNormalized,
     password_hash: row.passwordHash,
     role: row.role,
     stationId: row.stationId,
@@ -1426,6 +1962,7 @@ function mapDeadlineRule(row) {
 function mapStageTemplate(row) {
   return {
     ...row,
+    isOptional: Boolean(row.isOptional),
     isActive: Boolean(row.isActive),
   };
 }
@@ -1496,15 +2033,18 @@ function mapApplicationStage(row) {
     status: row.status,
     expectedAt: row.expectedAt,
     dueAt: row.dueAt,
-    deadlineStatus: getDeadlineStatus({
-      dueAt: row.dueAt,
-      completedAt: row.completedAt,
-      warningDays,
-    }),
+    deadlineStatus: row.status === 'not_required'
+      ? 'done'
+      : getDeadlineStatus({
+        dueAt: row.dueAt,
+        completedAt: row.completedAt,
+        warningDays,
+      }),
     startedAt: row.startedAt,
     completedAt: row.completedAt,
     publicNote: row.publicNote,
     isVisible: Boolean(row.isVisible),
+    isOptional: Boolean(row.isOptional),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -1538,9 +2078,41 @@ function mapEmailNotification(row) {
     recipientName: row.recipientName,
     subject: row.subject,
     body: row.body,
+    notificationType: row.notificationType,
+    payload: parseJsonObject(row.payload),
     status: row.status,
     createdAt: row.createdAt,
   };
+}
+
+function mapApplicationStatusHistory(row) {
+  return {
+    id: row.id,
+    applicationId: row.applicationId,
+    fromStatus: row.fromStatus,
+    toStatus: row.toStatus,
+    comment: row.comment,
+    changedByUserId: row.changedByUserId,
+    changedByName: row.changedByName,
+    changedByRole: row.changedByRole,
+    createdAt: row.createdAt,
+    isVisibleToCustomer: Boolean(row.isVisibleToCustomer),
+  };
+}
+
+function listStatusHistoryForApplication(applicationId, { includePrivate = true } = {}) {
+  return listApplicationStatusHistoryStatement
+    .all(applicationId)
+    .map(mapApplicationStatusHistory)
+    .filter((entry) => includePrivate || entry.isVisibleToCustomer)
+    .map((entry) => (includePrivate
+      ? entry
+      : {
+        ...entry,
+        changedByRole: undefined,
+        changedByUserId: undefined,
+        changedByName: undefined,
+      }));
 }
 
 function mapGeneratedDocument(row) {
@@ -1605,9 +2177,14 @@ function buildDeadlineChecks(application, deadlineData, includePrivate) {
     }));
 }
 
-function mapApplication(row, { includePrivate = true } = {}) {
+function mapApplication(row, {
+  includeHiddenStages = true,
+  includePrivate = true,
+  includePrivateStatusHistory = true,
+  includeNotifications = includePrivate,
+} = {}) {
   const stages = listStagesForApplication(row.id);
-  const visibleStages = includePrivate
+  const visibleStages = includeHiddenStages
     ? stages
     : stages.filter((stage) => stage.isVisible);
   const completedCount = visibleStages.filter((stage) => stage.status === 'completed').length;
@@ -1655,12 +2232,15 @@ function mapApplication(row, { includePrivate = true } = {}) {
     },
     stages: visibleStages,
     chat: includePrivate ? getChatSummary(row.chatId) : undefined,
-    notifications: includePrivate
+    notifications: includeNotifications
       ? listEmailNotificationsStatement.all(row.id).map(mapEmailNotification)
       : undefined,
     generatedDocuments: includePrivate
       ? listGeneratedDocumentsStatement.all(row.id).map(mapGeneratedDocument)
       : undefined,
+    statusHistory: listStatusHistoryForApplication(row.id, {
+      includePrivate: includePrivateStatusHistory,
+    }),
   };
 
   return {
@@ -1675,6 +2255,20 @@ function generateApplicationNumber() {
   const timePart = now.toISOString().slice(11, 19).replace(/:/g, '');
   const millisecondPart = String(now.getUTCMilliseconds()).padStart(3, '0');
   return `PR-${datePart}-${timePart}${millisecondPart}`;
+}
+
+function createPendingRawToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function hashPendingToken(token) {
+  return crypto.createHash('sha256').update(String(token ?? '')).digest('hex');
+}
+
+function getPendingAccessExpiry() {
+  const expiresAt = new Date();
+  expiresAt.setUTCDate(expiresAt.getUTCDate() + 30);
+  return expiresAt.toISOString();
 }
 
 function actorSnapshot(actor) {
@@ -1703,20 +2297,62 @@ export function recordAuditLog({ actor, stationId, entityType, entityId, action,
   );
 }
 
-function createStageNotification(application, stage, timestamp) {
+function recordApplicationStatusHistory({
+  actor,
+  applicationId,
+  comment = '',
+  fromStatus = null,
+  isVisibleToCustomer = false,
+  timestamp = getTimestamp(),
+  toStatus,
+}) {
+  const snapshot = actorSnapshot(actor);
+
+  insertApplicationStatusHistoryStatement.run(
+    applicationId,
+    fromStatus,
+    toStatus,
+    String(comment ?? '').trim(),
+    snapshot.id,
+    snapshot.role,
+    timestamp,
+    isVisibleToCustomer ? 1 : 0,
+  );
+}
+
+const stageStatusLabels = {
+  not_started: 'Не розпочато',
+  in_progress: 'Виконується',
+  completed: 'Виконано',
+  not_required: 'Не потрібно',
+};
+
+function createStageNotification(application, stage, timestamp, notificationType = 'stage_updated') {
   const hasEmail = application.email.includes('@');
-  const subject = `Оновлено етап заяви ${application.applicationNumber}`;
+  const subject = 'Оновлено етап за вашою заявкою на приєднання';
   const body = [
-    `За заявою ${application.applicationNumber} оновлено етап приєднання до теплових мереж.`,
+    `За вашою заявкою №${application.applicationNumber} оновлено етап: «${stage.title}».`,
     `Станція/компанія: ${application.stationName}`,
-    `Етап: ${stage.title}`,
-    `Статус: ${stage.status === 'completed' ? 'виконано' : stage.status}`,
+    `Поточний стан: «${stageStatusLabels[stage.status] ?? stage.status}».`,
+    stage.expectedAt ? `Очікуваний строк: ${stage.expectedAt}` : '',
+    stage.dueAt ? `Граничний строк: ${stage.dueAt}` : '',
     stage.completedAt ? `Дата виконання: ${stage.completedAt}` : '',
     stage.publicNote ? `Коментар: ${stage.publicNote}` : '',
-    'Email-лист сформовано для інформування замовника про стадію виконання етапу.',
+    'Email-повідомлення сформовано для інформування замовника про стан виконання етапу.',
   ]
     .filter(Boolean)
     .join('\n');
+  const payload = {
+    applicationNumber: application.applicationNumber,
+    stageId: stage.id,
+    stageKey: stage.stageKey,
+    stageTitle: stage.title,
+    stageStatus: stage.status,
+    expectedAt: stage.expectedAt,
+    dueAt: stage.dueAt,
+    completedAt: stage.completedAt,
+    publicNote: stage.publicNote,
+  };
 
   insertEmailNotificationStatement.run(
     application.id,
@@ -1725,9 +2361,95 @@ function createStageNotification(application, stage, timestamp) {
     application.applicantFullName,
     subject,
     body,
+    notificationType,
+    safeJson(payload),
     hasEmail ? 'prepared' : 'skipped',
     timestamp,
   );
+}
+
+function createApplicationEmailNotification({
+  application,
+  body,
+  notificationType,
+  payload = {},
+  subject,
+  timestamp = getTimestamp(),
+}) {
+  const hasEmail = application.email.includes('@');
+
+  insertEmailNotificationStatement.run(
+    application.id,
+    null,
+    application.email,
+    application.applicantFullName,
+    subject,
+    body,
+    notificationType,
+    safeJson({
+      applicationId: application.id,
+      applicationNumber: application.applicationNumber,
+      ...payload,
+    }),
+    hasEmail ? 'prepared' : 'skipped',
+    timestamp,
+  );
+}
+
+function createPendingClarificationNotification(application, comment, timestamp) {
+  createApplicationEmailNotification({
+    application,
+    notificationType: 'pending_needs_clarification',
+    subject: 'Заяву потрібно доповнити',
+    body: [
+      `За вашою заявою №${application.applicationNumber} потрібно уточнити дані.`,
+      comment ? `Коментар оператора: ${comment}` : '',
+      'Перейдіть до тимчасового кабінету заявки та внесіть необхідні уточнення.',
+      'Email-повідомлення сформовано для майбутньої відправки.',
+    ].filter(Boolean).join('\n'),
+    payload: { status: 'needs_clarification' },
+    timestamp,
+  });
+}
+
+function createCustomerAccessNotification(application, user, temporaryPassword, timestamp) {
+  const passwordLine = temporaryPassword
+    ? `Тимчасовий пароль: ${temporaryPassword}`
+    : 'Використайте чинний пароль від особистого кабінету.';
+
+  createApplicationEmailNotification({
+    application,
+    notificationType: 'customer_access_prepared',
+    subject: 'Доступ до особистого кабінету за заявкою на приєднання',
+    body: [
+      `Вашу заяву №${application.applicationNumber} прийнято в обробку.`,
+      'Для подальшої роботи використовуйте особистий кабінет замовника.',
+      `Логін: ${user.login || application.email}`,
+      passwordLine,
+      temporaryPassword ? 'Після входу рекомендуємо змінити пароль.' : '',
+      'Email-повідомлення сформовано для майбутньої відправки.',
+    ].filter(Boolean).join('\n'),
+    payload: {
+      userId: user.id,
+      login: user.login || application.email,
+      ...(temporaryPassword ? { temporaryPassword } : {}),
+    },
+    timestamp,
+  });
+}
+
+function shouldCreateStageNotification(previousStage, updatedStage) {
+  if (!updatedStage?.isVisible) {
+    return false;
+  }
+
+  const statusChanged = previousStage.status !== updatedStage.status;
+  const completedAtChanged = (previousStage.completedAt ?? '') !== (updatedStage.completedAt ?? '');
+  const publicNoteChanged = String(previousStage.publicNote ?? '').trim() !== String(updatedStage.publicNote ?? '').trim();
+
+  return (statusChanged && ['in_progress', 'completed'].includes(updatedStage.status))
+    || (completedAtChanged && Boolean(updatedStage.completedAt))
+    || publicNoteChanged;
 }
 
 function buildInitialDeadlineData(input) {
@@ -1779,12 +2501,15 @@ export function hasAdmin() {
   return row.count > 0;
 }
 
-export function createUser({ fullName, passwordHash, role, stationId = null, createdBy = null, actor = null }) {
+export function createUser({ fullName, login = '', passwordHash, role, stationId = null, createdBy = null, actor = null }) {
   const createdAt = getTimestamp();
   const normalized = normalizeLoginKey(fullName);
+  const normalizedLogin = login ? normalizeLoginKey(login) : '';
   const result = createUserStatement.run(
     fullName,
     normalized,
+    login,
+    normalizedLogin,
     passwordHash,
     role,
     stationId || null,
@@ -1806,26 +2531,35 @@ export function createUser({ fullName, passwordHash, role, stationId = null, cre
   return user;
 }
 
-const registerCustomerApplicationTransaction = db.transaction((input) => {
+function getPendingApplicationById(applicationId) {
+  const application = getApplicationById(applicationId, {
+    includeHiddenStages: false,
+    includePrivate: true,
+    includePrivateStatusHistory: false,
+    includeNotifications: false,
+  });
+
+  if (!application) {
+    return null;
+  }
+
+  return {
+    ...application,
+    chat: undefined,
+    generatedDocuments: undefined,
+    notifications: undefined,
+  };
+}
+
+const registerCustomerApplicationTransaction = db.transaction((input, metadata = {}) => {
   const timestamp = getTimestamp();
-  const userResult = createUserStatement.run(
-    input.fullName,
-    normalizeLoginKey(input.fullName),
-    input.passwordHash,
-    'customer',
-    input.stationId,
-    null,
-    timestamp,
-  );
-  const userId = Number(userResult.lastInsertRowid);
-  const user = getUserById(userId);
   const applicationNumber = input.applicationNumber || generateApplicationNumber();
   const applicationInput = {
     ...input,
     applicationNumber,
-    customerUserId: userId,
-    createdBy: userId,
-    status: 'in_progress',
+    customerUserId: null,
+    createdBy: null,
+    status: 'submitted',
   };
   const chatId = createApplicationChat(applicationInput, applicationNumber, timestamp);
   const deadlineData = buildInitialDeadlineData(applicationInput);
@@ -1845,13 +2579,43 @@ const registerCustomerApplicationTransaction = db.transaction((input) => {
     applicationInput.notes,
     safeJson(applicationInput.appendixData || {}),
     safeJson(deadlineData),
-    userId,
+    null,
     chatId,
-    userId,
+    null,
     timestamp,
     timestamp,
   );
   const applicationId = Number(applicationResult.lastInsertRowid);
+  const rawToken = createPendingRawToken();
+  const expiresAt = getPendingAccessExpiry();
+  const tokenResult = insertPendingAccessTokenStatement.run(
+    applicationId,
+    hashPendingToken(rawToken),
+    timestamp,
+    expiresAt,
+    metadata.ip ?? '',
+    metadata.userAgent ?? '',
+  );
+  const accessTokenId = Number(tokenResult.lastInsertRowid);
+  const sessionToken = createSessionToken();
+
+  insertPendingSessionStatement.run(
+    sessionToken,
+    applicationId,
+    accessTokenId,
+    timestamp,
+    expiresAt,
+    timestamp,
+  );
+
+  recordApplicationStatusHistory({
+    actor: { role: 'pending_application', fullName: input.applicantFullName },
+    applicationId,
+    comment: 'Заяву подано через публічну форму. Очікує перевірки оператором.',
+    isVisibleToCustomer: true,
+    timestamp,
+    toStatus: applicationInput.status,
+  });
 
   getActiveStageTemplates().forEach((stage) => {
     insertApplicationStageStatement.run(
@@ -1867,43 +2631,62 @@ const registerCustomerApplicationTransaction = db.transaction((input) => {
       null,
       '',
       1,
+      stage.isOptional ? 1 : 0,
       timestamp,
       timestamp,
     );
   });
 
   recordAuditLog({
-    actor: user,
-    stationId: user.stationId,
-    entityType: 'user',
-    entityId: user.id,
-    action: 'create',
-    summary: `Створено кабінет замовника ${user.fullName} через самостійну реєстрацію.`,
-    after: { id: user.id, fullName: user.fullName, role: user.role, stationId: user.stationId },
-  });
-
-  recordAuditLog({
-    actor: user,
+    actor: { role: 'guest', fullName: input.applicantFullName },
     stationId: applicationInput.stationId,
     entityType: 'application',
     entityId: applicationId,
+    action: 'pending_create',
+    summary: `Створено pending-заяву ${applicationNumber} через публічну форму.`,
+    after: {
+      applicationId,
+      applicationNumber,
+      stationId: applicationInput.stationId,
+      status: applicationInput.status,
+      customerUserId: null,
+    },
+  });
+
+  recordAuditLog({
+    actor: { role: 'guest', fullName: input.applicantFullName },
+    stationId: applicationInput.stationId,
+    entityType: 'pending_access_token',
+    entityId: accessTokenId,
     action: 'create',
-    summary: `Створено заяву ${applicationNumber} через самостійну реєстрацію.`,
-    after: { applicationId, applicationNumber, stationId: applicationInput.stationId, customerUserId: userId },
+    summary: `Створено тимчасовий доступ для заяви ${applicationNumber}.`,
+    after: { applicationId, applicationNumber, expiresAt },
+  });
+
+  recordAuditLog({
+    actor: { role: 'guest', fullName: input.applicantFullName },
+    stationId: applicationInput.stationId,
+    entityType: 'pending_application_session',
+    entityId: applicationId,
+    action: 'create',
+    summary: `Створено pending-сесію для заяви ${applicationNumber}.`,
+    after: { applicationId, applicationNumber, expiresAt },
   });
 
   return {
     applicationId,
-    userId,
+    accessToken: rawToken,
+    sessionToken,
   };
 });
 
-export function registerCustomerApplication(input) {
-  const result = registerCustomerApplicationTransaction(input);
+export function registerCustomerApplication(input, metadata = {}) {
+  const result = registerCustomerApplicationTransaction(input, metadata);
 
   return {
-    application: getApplicationById(result.applicationId),
-    user: getUserById(result.userId),
+    application: getPendingApplicationById(result.applicationId),
+    accessToken: result.accessToken,
+    sessionToken: result.sessionToken,
   };
 }
 
@@ -1924,7 +2707,8 @@ export function listManagers() {
 }
 
 export function findUserByFullName(fullName) {
-  return mapUser(findUserByNormalizedNameStatement.get(normalizeLoginKey(fullName)));
+  const loginKey = normalizeLoginKey(fullName);
+  return mapUser(findUserByNormalizedNameStatement.get(loginKey, loginKey));
 }
 
 export function getUserById(userId) {
@@ -1956,6 +2740,103 @@ export function getSessionUser(token) {
 
 export function removeSession(token) {
   deleteSessionStatement.run(token);
+}
+
+function getPendingSessionApplication(sessionToken) {
+  const session = findPendingSessionStatement.get(sessionToken);
+
+  if (!session) {
+    return null;
+  }
+
+  if (session.expiresAt && new Date(session.expiresAt).getTime() < Date.now()) {
+    deletePendingSessionStatement.run(sessionToken);
+    return null;
+  }
+
+  const application = getPendingApplicationById(session.applicationId);
+
+  if (!application || application.customerUserId) {
+    deletePendingSessionStatement.run(sessionToken);
+    return null;
+  }
+
+  updatePendingSessionSeenStatement.run(getTimestamp(), sessionToken);
+
+  return {
+    sessionToken,
+    application,
+  };
+}
+
+export function getPendingApplicationSession(sessionToken) {
+  return getPendingSessionApplication(sessionToken);
+}
+
+export function removePendingApplicationSession(sessionToken) {
+  deletePendingSessionStatement.run(sessionToken);
+}
+
+export function activatePendingApplicationAccess(rawToken, metadata = {}) {
+  const tokenHash = hashPendingToken(rawToken);
+  const token = getPendingAccessTokenByHashStatement.get(tokenHash);
+
+  if (!token || !token.isActive) {
+    return null;
+  }
+
+  if (token.expiresAt && new Date(token.expiresAt).getTime() < Date.now()) {
+    deactivatePendingTokensForApplicationStatement.run(token.applicationId);
+    return null;
+  }
+
+  const application = getPendingApplicationById(token.applicationId);
+
+  if (!application || application.customerUserId) {
+    deactivatePendingTokensForApplicationStatement.run(token.applicationId);
+    return null;
+  }
+
+  const timestamp = getTimestamp();
+  const sessionToken = createSessionToken();
+  updatePendingAccessTokenSeenStatement.run(timestamp, token.id);
+  insertPendingSessionStatement.run(
+    sessionToken,
+    application.id,
+    token.id,
+    timestamp,
+    token.expiresAt,
+    timestamp,
+  );
+
+  recordAuditLog({
+    actor: { role: 'pending_application', fullName: application.applicantFullName },
+    stationId: application.stationId,
+    entityType: 'pending_access_token',
+    entityId: token.id,
+    action: 'use',
+    summary: `Використано тимчасовий доступ до заяви ${application.applicationNumber}.`,
+    after: {
+      applicationId: application.id,
+      applicationNumber: application.applicationNumber,
+      ip: metadata.ip ?? '',
+    },
+  });
+
+  recordAuditLog({
+    actor: { role: 'pending_application', fullName: application.applicantFullName },
+    stationId: application.stationId,
+    entityType: 'pending_application_session',
+    entityId: application.id,
+    action: 'create',
+    summary: `Створено pending-сесію після переходу за посиланням до заяви ${application.applicationNumber}.`,
+    after: { applicationId: application.id, applicationNumber: application.applicationNumber },
+  });
+
+  return {
+    sessionToken,
+    application,
+  };
 }
 
 export function listStations() {
@@ -2111,6 +2992,7 @@ export function updateStageTemplate(templateId, input, actor) {
     input.expectedDaysType,
     input.defaultDueDays,
     input.dueDaysType,
+    input.isOptional ? 1 : 0,
     input.isActive ? 1 : 0,
     actor?.id ?? null,
     getTimestamp(),
@@ -2209,7 +3091,7 @@ const createApplicationTransaction = db.transaction((input, actor) => {
     input.email,
     input.objectAddress,
     input.connectionType,
-    input.status || 'in_progress',
+    input.status || 'submitted',
     input.receivedAt,
     input.responsibleName,
     input.notes,
@@ -2222,6 +3104,15 @@ const createApplicationTransaction = db.transaction((input, actor) => {
     timestamp,
   );
   const applicationId = Number(applicationResult.lastInsertRowid);
+
+  recordApplicationStatusHistory({
+    actor,
+    applicationId,
+    comment: 'Заяву додано до реєстру.',
+    isVisibleToCustomer: Boolean(input.customerUserId),
+    timestamp,
+    toStatus: input.status || 'submitted',
+  });
 
   getActiveStageTemplates().forEach((stage) => {
     insertApplicationStageStatement.run(
@@ -2237,6 +3128,7 @@ const createApplicationTransaction = db.transaction((input, actor) => {
       null,
       '',
       1,
+      stage.isOptional ? 1 : 0,
       timestamp,
       timestamp,
     );
@@ -2249,7 +3141,12 @@ const createApplicationTransaction = db.transaction((input, actor) => {
     entityId: applicationId,
     action: 'create',
     summary: `Створено заяву ${applicationNumber}.`,
-    after: { applicationId, applicationNumber, stationId: input.stationId },
+    after: {
+      applicationId,
+      applicationNumber,
+      stationId: input.stationId,
+      status: input.status || 'submitted',
+    },
   });
 
   return applicationId;
@@ -2267,17 +3164,26 @@ export function listApplicationsForUser(user) {
       ? listStationApplicationsStatement.all(user.stationId)
       : listCustomerApplicationsStatement.all(user.id, user.id);
 
+  if (user.role === 'customer') {
+    return rows.map((row) => mapApplication(row, {
+      includeHiddenStages: false,
+      includePrivate: true,
+      includePrivateStatusHistory: false,
+      includeNotifications: false,
+    }));
+  }
+
   return rows.map((row) => mapApplication(row));
 }
 
-export function getApplicationById(applicationId) {
+export function getApplicationById(applicationId, options = {}) {
   const application = getApplicationByIdStatement.get(applicationId);
 
   if (!application) {
     return null;
   }
 
-  return mapApplication(application);
+  return mapApplication(application, options);
 }
 
 export function canAccessApplication(user, applicationId) {
@@ -2307,6 +3213,16 @@ const updateApplicationTransaction = db.transaction((applicationId, input, actor
 
   const timestamp = getTimestamp();
   const applicationNumber = input.applicationNumber || current.applicationNumber;
+  const statusComment = String(input.statusComment ?? '').trim();
+  const statusChanged = current.status !== input.status;
+  const transitionResult = statusChanged
+    ? assertApplicationStatusTransition({
+      actorRole: actor?.role,
+      comment: statusComment,
+      fromStatus: current.status,
+      toStatus: input.status,
+    })
+    : { isOverride: false };
   const deadlineData = {
     ...parseJsonObject(current.deadlineData),
     ...parseJsonObject(input.deadlineData),
@@ -2353,15 +3269,40 @@ const updateApplicationTransaction = db.transaction((applicationId, input, actor
     addChatMemberStatement.run(current.chatId, input.customerUserId, timestamp);
   }
 
+  if (statusChanged) {
+    recordApplicationStatusHistory({
+      actor,
+      applicationId,
+      comment: statusComment,
+      fromStatus: current.status,
+      isVisibleToCustomer: isCustomerVisibleStatusComment(input.status),
+      timestamp,
+      toStatus: input.status,
+    });
+
+    if (!input.customerUserId && input.status === 'needs_clarification') {
+      createPendingClarificationNotification(getApplicationById(applicationId), statusComment, timestamp);
+    }
+  }
+
   recordAuditLog({
     actor,
     stationId: input.stationId,
     entityType: 'application',
     entityId: applicationId,
     action: 'update',
-    summary: `Оновлено заяву ${applicationNumber}.`,
+    summary: statusChanged
+      ? `Змінено статус заяви ${applicationNumber}: ${APPLICATION_STATUS_LABELS[current.status] ?? current.status} → ${APPLICATION_STATUS_LABELS[input.status] ?? input.status}${transitionResult.isOverride ? ' (адмінське перевизначення)' : ''}.`
+      : `Оновлено заяву ${applicationNumber}.`,
     before: mapApplication(current),
-    after: { applicationId, applicationNumber, stationId: input.stationId },
+    after: {
+      applicationId,
+      applicationNumber,
+      stationId: input.stationId,
+      status: input.status,
+      statusComment,
+      statusOverride: transitionResult.isOverride,
+    },
   });
 
   return applicationId;
@@ -2372,12 +3313,287 @@ export function updateApplication(applicationId, input, actor) {
   return updatedId ? getApplicationById(updatedId) : null;
 }
 
+const resubmitPendingApplicationTransaction = db.transaction((applicationId, input) => {
+  const current = getApplicationByIdStatement.get(applicationId);
+
+  if (!current) {
+    return null;
+  }
+
+  if (current.customerUserId) {
+    throw new Error('Заяву вже прийнято. Подальша робота доступна через особистий кабінет.');
+  }
+
+  if (current.status !== 'needs_clarification') {
+    throw new Error('Редагування доступне тільки якщо оператор повернув заяву на доповнення.');
+  }
+
+  const timestamp = getTimestamp();
+  assertApplicationStatusTransition({
+    actorRole: 'pending_application',
+    comment: 'Заяву повторно подано після уточнення.',
+    fromStatus: current.status,
+    toStatus: 'submitted',
+  });
+
+  const deadlineData = buildInitialDeadlineData(input);
+
+  updateApplicationStatement.run(
+    input.stationId,
+    current.applicationNumber,
+    input.applicantFullName,
+    normalizeLoginKey(input.applicantFullName),
+    input.phone,
+    normalizePhone(input.phone),
+    input.email,
+    input.objectAddress,
+    input.connectionType,
+    'submitted',
+    input.receivedAt,
+    input.responsibleName,
+    input.notes,
+    safeJson(input.appendixData || {}),
+    safeJson(deadlineData),
+    null,
+    timestamp,
+    applicationId,
+  );
+
+  updateChatStatement.run(
+    `Заява ${current.applicationNumber}: ${input.applicantFullName}`,
+    input.objectAddress,
+    input.stationId,
+    current.chatId,
+  );
+
+  recordApplicationStatusHistory({
+    actor: { role: 'pending_application', fullName: input.applicantFullName },
+    applicationId,
+    comment: 'Заяву повторно подано після уточнення.',
+    fromStatus: current.status,
+    isVisibleToCustomer: true,
+    timestamp,
+    toStatus: 'submitted',
+  });
+
+  recordAuditLog({
+    actor: { role: 'pending_application', fullName: input.applicantFullName },
+    stationId: input.stationId,
+    entityType: 'application',
+    entityId: applicationId,
+    action: 'pending_resubmit',
+    summary: `Pending-заяву ${current.applicationNumber} повторно подано після уточнення.`,
+    before: mapApplication(current),
+    after: {
+      applicationId,
+      applicationNumber: current.applicationNumber,
+      status: 'submitted',
+      stationId: input.stationId,
+    },
+  });
+
+  return applicationId;
+});
+
+export function resubmitPendingApplication(applicationId, input) {
+  const updatedId = resubmitPendingApplicationTransaction(applicationId, input);
+  return updatedId ? getPendingApplicationById(updatedId) : null;
+}
+
+const acceptPendingApplicationTransaction = db.transaction((applicationId, {
+  actor,
+  passwordHash,
+  temporaryPassword,
+}) => {
+  const current = getApplicationByIdStatement.get(applicationId);
+
+  if (!current) {
+    return null;
+  }
+
+  if (current.customerUserId) {
+    return {
+      applicationId,
+      userId: current.customerUserId,
+      createdUser: false,
+      usedTemporaryPassword: false,
+    };
+  }
+
+  assertApplicationStatusTransition({
+    actorRole: actor?.role,
+    comment: '',
+    fromStatus: current.status,
+    toStatus: 'accepted',
+  });
+
+  const timestamp = getTimestamp();
+  const login = current.email;
+  const loginNormalized = normalizeLoginKey(login);
+  let user = findUserByNormalizedNameStatement.get(loginNormalized, loginNormalized);
+  let createdUser = false;
+  let usedTemporaryPassword = false;
+
+  if (user) {
+    user = mapUser(user);
+
+    if (user.role !== 'customer') {
+      throw new Error('Користувач з таким email уже існує, але не є замовником.');
+    }
+
+    if (user.stationId !== current.stationId) {
+      throw new Error('Користувач з таким email належить іншій станції/компанії.');
+    }
+  } else {
+    let fullName = current.applicantFullName;
+    const duplicateName = findUserByNormalizedNameStatement.get(normalizeLoginKey(fullName), '__login_not_used__');
+
+    if (duplicateName) {
+      fullName = `${fullName} (${current.applicationNumber})`;
+    }
+
+    const userResult = createUserStatement.run(
+      fullName,
+      normalizeLoginKey(fullName),
+      login,
+      loginNormalized,
+      passwordHash,
+      'customer',
+      current.stationId,
+      actor?.id ?? null,
+      timestamp,
+    );
+
+    user = getUserById(Number(userResult.lastInsertRowid));
+    createdUser = true;
+    usedTemporaryPassword = true;
+
+    recordAuditLog({
+      actor,
+      stationId: current.stationId,
+      entityType: 'user',
+      entityId: user.id,
+      action: 'create_from_pending_application',
+      summary: `Створено кабінет замовника ${user.fullName} після прийняття pending-заяви ${current.applicationNumber}.`,
+      after: { id: user.id, fullName: user.fullName, login: user.login, role: user.role, stationId: user.stationId },
+    });
+  }
+
+  updateApplicationStatement.run(
+    current.stationId,
+    current.applicationNumber,
+    current.applicantFullName,
+    normalizeLoginKey(current.applicantFullName),
+    current.phone,
+    normalizePhone(current.phone),
+    current.email,
+    current.objectAddress,
+    current.connectionType,
+    'accepted',
+    current.receivedAt,
+    current.responsibleName,
+    current.notes,
+    current.appendixData,
+    current.deadlineData,
+    user.id,
+    timestamp,
+    applicationId,
+  );
+
+  addChatMemberStatement.run(current.chatId, user.id, timestamp);
+  deactivatePendingTokensForApplicationStatement.run(applicationId);
+  deletePendingSessionsForApplicationStatement.run(applicationId);
+
+  recordApplicationStatusHistory({
+    actor,
+    applicationId,
+    comment: createdUser
+      ? 'Заяву прийнято. Для замовника підготовлено доступ до особистого кабінету.'
+      : 'Заяву прийнято та прив’язано до наявного кабінету замовника.',
+    fromStatus: current.status,
+    isVisibleToCustomer: true,
+    timestamp,
+    toStatus: 'accepted',
+  });
+
+  const updatedApplication = getApplicationById(applicationId);
+  createCustomerAccessNotification(
+    updatedApplication,
+    user,
+    usedTemporaryPassword ? temporaryPassword : '',
+    timestamp,
+  );
+
+  recordAuditLog({
+    actor,
+    stationId: current.stationId,
+    entityType: 'application',
+    entityId: applicationId,
+    action: 'accept_pending_application',
+    summary: `Pending-заяву ${current.applicationNumber} прийнято в обробку.`,
+    before: mapApplication(current),
+    after: {
+      applicationId,
+      applicationNumber: current.applicationNumber,
+      status: 'accepted',
+      customerUserId: user.id,
+      createdUser,
+    },
+  });
+
+  recordAuditLog({
+    actor,
+    stationId: current.stationId,
+    entityType: 'pending_access_token',
+    entityId: applicationId,
+    action: 'deactivate',
+    summary: `Тимчасовий доступ до заяви ${current.applicationNumber} деактивовано після прийняття.`,
+    after: { applicationId, applicationNumber: current.applicationNumber },
+  });
+
+  recordAuditLog({
+    actor,
+    stationId: current.stationId,
+    entityType: 'email_notification',
+    entityId: applicationId,
+    action: 'prepare_access_email',
+    summary: `Підготовлено email-повідомлення з доступом до кабінету за заявою ${current.applicationNumber}.`,
+    after: { applicationId, applicationNumber: current.applicationNumber, recipientEmail: current.email },
+  });
+
+  return {
+    applicationId,
+    userId: user.id,
+    createdUser,
+    usedTemporaryPassword,
+  };
+});
+
+export function acceptPendingApplication(applicationId, input) {
+  const result = acceptPendingApplicationTransaction(applicationId, input);
+
+  if (!result) {
+    return null;
+  }
+
+  return {
+    application: getApplicationById(result.applicationId),
+    user: getUserById(result.userId),
+    createdUser: result.createdUser,
+    usedTemporaryPassword: result.usedTemporaryPassword,
+  };
+}
+
 const updateApplicationStageTransaction = db.transaction((applicationId, stageId, input, actor) => {
   const currentApplication = getApplicationByIdStatement.get(applicationId);
   const currentStage = getApplicationStageByIdStatement.get(stageId, applicationId);
 
   if (!currentApplication || !currentStage) {
     return null;
+  }
+
+  if (input.status === 'not_required' && !currentStage.isOptional) {
+    throw new Error('Статус "Не потрібно" можна встановити тільки для етапів за необхідності.');
   }
 
   const timestamp = getTimestamp();
@@ -2400,12 +3616,15 @@ const updateApplicationStageTransaction = db.transaction((applicationId, stageId
 
   const updatedApplication = getApplicationById(applicationId);
   const updatedStage = updatedApplication.stages.find((stage) => stage.id === stageId);
-  const completedNow = input.status === 'completed' && input.completedAt;
-  const wasCompleted = currentStage.status === 'completed'
-    && currentStage.completedAt === input.completedAt;
+  const previousStage = mapApplicationStage(currentStage);
 
-  if (completedNow && !wasCompleted) {
-    createStageNotification(updatedApplication, updatedStage, timestamp);
+  if (shouldCreateStageNotification(previousStage, updatedStage)) {
+    createStageNotification(
+      updatedApplication,
+      updatedStage,
+      timestamp,
+      updatedStage.status === 'completed' ? 'stage_completed' : 'stage_updated',
+    );
   }
 
   recordAuditLog({
@@ -2426,13 +3645,10 @@ export function updateApplicationStage(applicationId, stageId, input, actor) {
   return updateApplicationStageTransaction(applicationId, stageId, input, actor);
 }
 
-export function lookupPublicApplication({ phone, fullName, applicationNumber }) {
-  const normalizedPhone = normalizePhone(phone);
-  const normalizedName = normalizeLoginKey(fullName || '');
-  const row = publicApplicationLookupStatement.get(
-    normalizedPhone,
-    normalizedName,
+export function lookupPublicApplication({ email, applicationNumber }, metadata = {}) {
+  const row = publicApplicationLookupByEmailStatement.get(
     applicationNumber || '',
+    email || '',
   );
 
   if (!row) {
@@ -2440,7 +3656,61 @@ export function lookupPublicApplication({ phone, fullName, applicationNumber }) 
   }
 
   const application = getApplicationByIdStatement.get(row.id);
-  return mapApplication(application, { includePrivate: false });
+  const publicApplication = mapApplication(application, {
+    includeHiddenStages: false,
+    includePrivate: false,
+    includePrivateStatusHistory: false,
+  });
+
+  if (application.customerUserId) {
+    recordAuditLog({
+      actor: { role: 'guest', fullName: 'Публічна перевірка' },
+      stationId: application.stationId,
+      entityType: 'application',
+      entityId: application.id,
+      action: 'status_lookup_success',
+      summary: `Публічна перевірка заяви ${application.applicationNumber}: заяву вже прийнято.`,
+      after: { applicationNumber: application.applicationNumber, emailMatched: true },
+    });
+
+    return {
+      application: publicApplication,
+      requiresLogin: true,
+      accessToken: '',
+    };
+  }
+
+  const timestamp = getTimestamp();
+  const rawToken = createPendingRawToken();
+  const expiresAt = getPendingAccessExpiry();
+  const tokenResult = insertPendingAccessTokenStatement.run(
+    application.id,
+    hashPendingToken(rawToken),
+    timestamp,
+    expiresAt,
+    metadata.ip ?? '',
+    metadata.userAgent ?? '',
+  );
+
+  recordAuditLog({
+    actor: { role: 'guest', fullName: 'Публічна перевірка' },
+    stationId: application.stationId,
+    entityType: 'application',
+    entityId: application.id,
+    action: 'status_lookup_success',
+    summary: `Публічна перевірка заяви ${application.applicationNumber}: підготовлено нове посилання тимчасового доступу.`,
+    after: {
+      applicationNumber: application.applicationNumber,
+      accessTokenId: Number(tokenResult.lastInsertRowid),
+      emailMatched: true,
+    },
+  });
+
+  return {
+    application: publicApplication,
+    requiresLogin: false,
+    accessToken: rawToken,
+  };
 }
 
 const deleteApplicationTransaction = db.transaction((applicationId, actor) => {

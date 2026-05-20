@@ -9,11 +9,16 @@ import {
 import {
   mapApplicationToConnectionAgreement,
   mapApplicationToConsumerQuestionnaire,
+  mapApplicationToConsumerQuestionnaireTemplateData,
   mapApplicationToGeneratorQuestionnaire,
+  mapApplicationToGeneratorQuestionnaireTemplateData,
   mapApplicationToStatementDocument,
+  mapApplicationToStatementTemplateData,
   mapApplicationToTechnicalConditions,
   valueOrEmpty,
 } from './documentFieldMapper.js';
+import { getTemplatePath } from './documentTemplateRegistry.js';
+import { renderDocxTemplate } from './documentTemplateRenderer.js';
 
 const documentTitles = {
   appendix1: 'Додаток 1. Типовий договір на приєднання до теплових мереж',
@@ -22,6 +27,8 @@ const documentTitles = {
   appendix4: 'Додаток 4. Опитувальний лист для тепловикористальних установок',
   appendix5: 'Додаток 5. Опитувальний лист для теплогенеруючих/когенераційних установок',
 };
+
+const templatedDocumentTypes = new Set(['appendix3', 'appendix4', 'appendix5']);
 
 function valueOrDash(value) {
   const text = valueOrEmpty(value);
@@ -255,6 +262,36 @@ function sanitizeFilePart(value) {
     .slice(0, 80) || 'document';
 }
 
+function questionnaireTypeOf(application) {
+  return application?.appendixData?.questionnaire?.type;
+}
+
+function buildTemplateData(application, type) {
+  if (type === 'appendix3') {
+    return mapApplicationToStatementTemplateData(application);
+  }
+
+  if (type === 'appendix4') {
+    return mapApplicationToConsumerQuestionnaireTemplateData(application);
+  }
+
+  return mapApplicationToGeneratorQuestionnaireTemplateData(application);
+}
+
+async function tryGenerateFromTemplate(application, type) {
+  if (!templatedDocumentTypes.has(type)) {
+    return null;
+  }
+
+  const templatePath = getTemplatePath(type, questionnaireTypeOf(application));
+
+  if (!templatePath) {
+    throw new Error(`Template is not registered for ${type}.`);
+  }
+
+  return renderDocxTemplate(templatePath, buildTemplateData(application, type));
+}
+
 export async function generateApplicationDocument(application, type) {
   const titleText = documentTitles[type];
 
@@ -262,15 +299,29 @@ export async function generateApplicationDocument(application, type) {
     throw new Error('Невідомий тип документа.');
   }
 
-  const doc = new Document({
-    sections: [
-      {
-        properties: {},
-        children: buildDocumentChildren(application, type),
-      },
-    ],
-  });
-  const buffer = await Packer.toBuffer(doc);
+  let buffer = null;
+
+  try {
+    buffer = await tryGenerateFromTemplate(application, type);
+  } catch (error) {
+    console.warn(
+      `Template generation failed for ${type}, falling back to programmatic generator.`,
+      error?.message ?? error,
+    );
+  }
+
+  if (!buffer) {
+    const doc = new Document({
+      sections: [
+        {
+          properties: {},
+          children: buildDocumentChildren(application, type),
+        },
+      ],
+    });
+    buffer = await Packer.toBuffer(doc);
+  }
+
   const originalName = `${sanitizeFilePart(application.applicationNumber)}-${type}.docx`;
 
   return {

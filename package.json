@@ -13,7 +13,10 @@
     "build:public": "node scripts/public-runner.mjs build",
     "build": "npm run build -w client",
     "start": "npm run start -w server",
-    "create-admin": "npm run create-admin -w server --"
+    "create-admin": "npm run create-admin -w server --",
+    "check:document-mapping": "npm run check:document-mapping -w server",
+    "check:template-placeholders": "npm run check:template-placeholders -w server",
+    "check:template-generation": "npm run check:template-generation -w server"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

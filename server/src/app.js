@@ -8,6 +8,8 @@ import {
   canAccessApplication,
   canAccessChat,
   canAccessGeneratedDocument,
+  acceptPendingApplication,
+  activatePendingApplicationAccess,
   createApplication,
   createChat,
   createGeneratedDocumentRecord,
@@ -23,6 +25,7 @@ import {
   getAttachmentById,
   getChatById,
   getGeneratedDocumentById,
+  getPendingApplicationSession,
   getSessionUser,
   getStationById,
   getUserById,
@@ -37,9 +40,12 @@ import {
   listStations,
   listUsersForUser,
   lookupPublicApplication,
+  recordAuditLog,
   registerCustomerApplication,
   removeSession,
+  removePendingApplicationSession,
   replaceChatAccess,
+  resubmitPendingApplication,
   updateApplication,
   updateApplicationStage,
   updateDeadlineRule,
@@ -56,6 +62,7 @@ import {
 } from './auth.js';
 import {
   generatedDocumentsDir,
+  pendingSessionCookieName,
   sessionCookieName,
   sessionDurationMs,
   uploadsDir,
@@ -66,6 +73,7 @@ import {
   normalizeQuestionnaireType,
   sanitizeQuestionnairePayload,
 } from './applicationFormSchema.js';
+import { isValidApplicationStatus } from './applicationStatusWorkflow.js';
 import { removeStoredFiles, removeUploadedFiles, upload } from './uploads.js';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -159,6 +167,24 @@ function validateInteger(value, fieldName, { min = 0, required = true } = {}) {
 
 function validateBoolean(value) {
   return Boolean(value);
+}
+
+function generateTemporaryPassword(length = 6) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  let password = '';
+
+  for (let index = 0; index < length; index += 1) {
+    password += alphabet[crypto.randomInt(0, alphabet.length)];
+  }
+
+  return password;
+}
+
+function getRequestMetadata(request) {
+  return {
+    ip: request.ip ?? '',
+    userAgent: request.get('user-agent') ?? '',
+  };
 }
 
 function validateStationPayload(input) {
@@ -300,7 +326,7 @@ function validateDeadlineData(input) {
   };
 }
 
-function validateApplicationPayload(input, actor) {
+function validateApplicationPayload(input, actor, { defaultStatus = 'submitted' } = {}) {
   const stationId = actor.role === 'admin'
     ? validateStationId(input?.stationId)
     : actor.stationId;
@@ -310,7 +336,7 @@ function validateApplicationPayload(input, actor) {
   const email = validateEmail(input?.email ?? '');
   const objectAddress = validateRequiredText(input?.objectAddress, 3, 500, 'Адреса або назва об’єкта');
   const connectionType = String(input?.connectionType ?? 'standard');
-  const status = String(input?.status ?? 'in_progress');
+  const status = String(input?.status ?? defaultStatus);
   const receivedAt = validateDateValue(
     input?.receivedAt ?? new Date().toISOString().slice(0, 10),
     'Дата отримання заяви',
@@ -325,7 +351,7 @@ function validateApplicationPayload(input, actor) {
     throw new Error('Тип приєднання має бути звичайним або тимчасовим.');
   }
 
-  if (!['draft', 'in_progress', 'completed', 'rejected'].includes(status)) {
+  if (!isValidApplicationStatus(status)) {
     throw new Error('Некоректний статус заяви.');
   }
 
@@ -344,6 +370,7 @@ function validateApplicationPayload(input, actor) {
     appendixData,
     deadlineData,
     customerUserId,
+    statusComment: validateOptionalText(input?.statusComment, 2000, 'Коментар до статусу'),
   };
 }
 
@@ -352,7 +379,7 @@ function validateStagePayload(input) {
   const expectedAt = validateDateValue(input?.expectedAt, 'Очікуваний строк', { required: false });
   const dueAt = validateDateValue(input?.dueAt, 'Граничний строк', { required: false });
   const startedAt = validateDateValue(input?.startedAt, 'Дата початку', { required: false });
-  const completedAt = validateDateValue(input?.completedAt, 'Дата виконання', { required: false });
+  let completedAt = validateDateValue(input?.completedAt, 'Дата виконання', { required: false });
   const publicNote = validateOptionalText(input?.publicNote, 2000, 'Коментар до етапу');
   const isVisible = Boolean(input?.isVisible);
 
@@ -361,7 +388,11 @@ function validateStagePayload(input) {
   }
 
   if (status === 'completed' && !completedAt) {
-    throw new Error('Для виконаного етапу потрібно вказати дату виконання.');
+    completedAt = new Date().toISOString().slice(0, 10);
+  }
+
+  if (status !== 'completed') {
+    completedAt = null;
   }
 
   return {
@@ -376,17 +407,15 @@ function validateStagePayload(input) {
 }
 
 function validateLookupPayload(input) {
-  const phone = validatePhone(input?.phone ?? '');
-  const fullName = String(input?.fullName ?? '').trim();
+  const email = validateEmail(input?.email ?? '', { required: true });
   const applicationNumber = String(input?.applicationNumber ?? '').trim();
 
-  if (!fullName && !applicationNumber) {
-    throw new Error('Вкажіть ПІБ або номер заяви.');
+  if (!applicationNumber) {
+    throw new Error('Вкажіть номер заяви.');
   }
 
   return {
-    phone,
-    fullName,
+    email,
     applicationNumber,
   };
 }
@@ -415,7 +444,6 @@ function validateCreateUserPayload(input, actor) {
 function validatePublicRegistrationPayload(input) {
   const stationId = validateStationId(input?.stationId);
   const fullName = validateFullName(input?.fullName ?? '');
-  const password = validatePassword(input?.password ?? '');
   const phone = validatePhone(input?.phone ?? '');
   const email = validateEmail(input?.email ?? '', { required: true });
   const objectAddress = validateRequiredText(input?.objectAddress, 3, 500, 'Адреса або назва об’єкта');
@@ -455,7 +483,6 @@ function validatePublicRegistrationPayload(input) {
   return {
     stationId,
     fullName,
-    password,
     applicantFullName: fullName,
     phone,
     email,
@@ -465,6 +492,63 @@ function validatePublicRegistrationPayload(input) {
     responsibleName: '',
     notes,
     appendixData,
+  };
+}
+
+function validateCustomerApplicationPayload(input, user) {
+  const stationId = validateStationId(input?.stationId || user.stationId);
+  const fullName = validateFullName(user.fullName ?? user.full_name ?? '');
+  const phone = validatePhone(input?.phone ?? '');
+  const email = validateEmail(input?.email ?? '', { required: true });
+  const objectAddress = validateRequiredText(input?.objectAddress, 3, 500, 'Адреса або назва об’єкта');
+  const connectionType = String(input?.connectionType ?? 'standard');
+  const mailingAddress = validateRequiredText(input?.mailingAddress, 3, 700, 'Адреса для листування');
+  const objectName = validateRequiredText(input?.objectName || objectAddress, 3, 700, 'Об’єкт у заяві');
+  const connectionReason = validateOptionalText(input?.connectionReason, 700, 'Причина приєднання');
+  const notes = validateOptionalText(input?.notes, 5000, 'Примітки');
+  const questionnaireType = normalizeQuestionnaireType(input?.questionnaireType ?? input?.type);
+
+  if (!['standard', 'temporary'].includes(connectionType)) {
+    throw new Error('Тип приєднання має бути звичайним або тимчасовим.');
+  }
+
+  const appendixData = validateAppendixData({
+    appendix3: {
+      mailingAddress,
+      objectName,
+      connectionReason,
+      representativeName: fullName,
+      representativePhone: phone,
+      representativeEmail: email,
+    },
+    questionnaire: {
+      ...input,
+      type: questionnaireType,
+      customerName: input?.customerName || fullName,
+      customerAddress: input?.customerAddress || mailingAddress,
+      customerEmail: input?.customerEmail || email,
+      customerPhone: input?.customerPhone || phone,
+      objectName,
+      objectAddress,
+      notificationMethod: input?.notificationMethod || email,
+    },
+  });
+
+  return {
+    stationId,
+    applicationNumber: '',
+    applicantFullName: fullName,
+    phone,
+    email,
+    objectAddress,
+    connectionType,
+    status: 'submitted',
+    receivedAt: new Date().toISOString().slice(0, 10),
+    responsibleName: '',
+    notes,
+    appendixData,
+    deadlineData: {},
+    customerUserId: user.id,
   };
 }
 
@@ -501,6 +585,7 @@ function validateStageTemplatePayload(input) {
     expectedDaysType,
     defaultDueDays: validateInteger(input?.defaultDueDays, 'Типовий граничний строк', { min: 0 }),
     dueDaysType,
+    isOptional: Boolean(input?.isOptional),
     isActive: Boolean(input?.isActive),
   };
 }
@@ -519,21 +604,32 @@ export function createApp({ clientUrl }) {
 
   app.use((request, response, next) => {
     const token = request.cookies?.[sessionCookieName];
+    const pendingToken = request.cookies?.[pendingSessionCookieName];
+    request.pendingAccess = null;
 
     if (!token) {
       request.auth = null;
-      return next();
+    } else {
+      const session = getSessionUser(token);
+
+      if (!session) {
+        response.clearCookie(sessionCookieName);
+        request.auth = null;
+      } else {
+        request.auth = session;
+      }
     }
 
-    const session = getSessionUser(token);
+    if (pendingToken) {
+      const pendingSession = getPendingApplicationSession(pendingToken);
 
-    if (!session) {
-      response.clearCookie(sessionCookieName);
-      request.auth = null;
-      return next();
+      if (!pendingSession) {
+        response.clearCookie(pendingSessionCookieName);
+      } else {
+        request.pendingAccess = pendingSession;
+      }
     }
 
-    request.auth = session;
     return next();
   });
 
@@ -556,6 +652,14 @@ export function createApp({ clientUrl }) {
   function requireStaff(request, response, next) {
     if (!['admin', 'manager'].includes(request.auth?.user?.role)) {
       return sendError(response, 403, 'Потрібна роль адміністратора або менеджера.');
+    }
+
+    return next();
+  }
+
+  function requireCustomer(request, response, next) {
+    if (request.auth?.user?.role !== 'customer') {
+      return sendError(response, 403, 'Потрібна роль замовника.');
     }
 
     return next();
@@ -599,7 +703,14 @@ export function createApp({ clientUrl }) {
       return sendError(response, 403, 'Доступ до цієї заяви заборонено.');
     }
 
-    request.application = application;
+    request.application = request.auth.user.role === 'customer'
+      ? getApplicationById(applicationId, {
+        includeHiddenStages: false,
+        includePrivate: true,
+        includePrivateStatusHistory: false,
+        includeNotifications: false,
+      })
+      : application;
     return next();
   }
 
@@ -615,6 +726,13 @@ export function createApp({ clientUrl }) {
   app.get('/api/auth/me', (request, response) => {
     response.json({
       user: request.auth?.user ? userToClient(request.auth.user) : null,
+      pendingAccess: request.auth?.user ? null : request.pendingAccess
+        ? {
+          applicationId: request.pendingAccess.application.id,
+          applicationNumber: request.pendingAccess.application.applicationNumber,
+          path: '/application-access/session',
+        }
+        : null,
     });
   });
 
@@ -658,7 +776,14 @@ export function createApp({ clientUrl }) {
       removeSession(token);
     }
 
+    const pendingToken = request.cookies?.[pendingSessionCookieName];
+
+    if (pendingToken) {
+      removePendingApplicationSession(pendingToken);
+    }
+
     response.clearCookie(sessionCookieName);
+    response.clearCookie(pendingSessionCookieName);
     response.status(204).end();
   });
 
@@ -676,16 +801,9 @@ export function createApp({ clientUrl }) {
   app.post('/api/public/register', async (request, response) => {
     try {
       const payload = validatePublicRegistrationPayload(request.body);
-      const passwordHash = await hashPassword(payload.password);
-      const registrationData = { ...payload };
-      delete registrationData.password;
-      const result = registerCustomerApplication({
-        ...registrationData,
-        passwordHash,
-      });
-      const sessionToken = createSession(result.user.id);
+      const result = registerCustomerApplication(payload, getRequestMetadata(request));
 
-      response.cookie(sessionCookieName, sessionToken, {
+      response.cookie(pendingSessionCookieName, result.sessionToken, {
         httpOnly: true,
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',
@@ -694,11 +812,17 @@ export function createApp({ clientUrl }) {
 
       response.status(201).json({
         application: result.application,
-        user: userToClient(result.user),
+        accessToken: result.accessToken,
+        accessPath: `/application-access/${result.accessToken}`,
+        pendingAccess: {
+          applicationId: result.application.id,
+          applicationNumber: result.application.applicationNumber,
+          path: '/application-access/session',
+        },
       });
     } catch (error) {
       if (isUniqueConstraintError(error)) {
-        return sendError(response, 409, 'Користувач з таким ПІБ уже існує. Увійдіть у кабінет або зверніться до відповідального працівника.');
+        return sendError(response, 409, 'Не вдалося створити тимчасовий доступ. Спробуйте подати заяву ще раз.');
       }
 
       return sendError(response, 400, error.message);
@@ -708,13 +832,90 @@ export function createApp({ clientUrl }) {
   app.post('/api/public/applications/lookup', (request, response) => {
     try {
       const payload = validateLookupPayload(request.body);
-      const application = lookupPublicApplication(payload);
+      const result = lookupPublicApplication(payload, getRequestMetadata(request));
 
-      if (!application) {
-        return sendError(response, 404, 'Заяву не знайдено. Перевірте номер телефону, ПІБ або номер заяви.');
+      if (!result) {
+        recordAuditLog({
+          actor: { role: 'guest', fullName: 'Публічна перевірка' },
+          entityType: 'application',
+          entityId: payload.applicationNumber || 'unknown',
+          action: 'status_lookup_failed',
+          summary: 'Публічна перевірка заяви не знайшла збіг за номером заяви та email.',
+          after: { applicationNumber: payload.applicationNumber },
+        });
+        return sendError(response, 404, 'Заявку не знайдено. Перевірте номер заявки та email.');
       }
 
       return response.json({
+        application: result.application,
+        requiresLogin: result.requiresLogin,
+        accessPath: result.accessToken ? `/application-access/${result.accessToken}` : '',
+      });
+    } catch (error) {
+      return sendError(response, 400, error.message);
+    }
+  });
+
+  app.post('/api/public/application-access/:token', (request, response) => {
+    const token = String(request.params.token ?? '').trim();
+
+    if (!token || token === 'session') {
+      return sendError(response, 400, 'Некоректне посилання тимчасового доступу.');
+    }
+
+    const result = activatePendingApplicationAccess(token, getRequestMetadata(request));
+
+    if (!result) {
+      return sendError(response, 404, 'Посилання недійсне або заявка вже прийнята. Якщо заявку прийнято, увійдіть в особистий кабінет через сторінку входу.');
+    }
+
+    response.cookie(pendingSessionCookieName, result.sessionToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: sessionDurationMs,
+    });
+
+    return response.json({
+      application: result.application,
+      pendingAccess: {
+        applicationId: result.application.id,
+        applicationNumber: result.application.applicationNumber,
+        path: '/application-access/session',
+      },
+    });
+  });
+
+  app.get('/api/pending/application', (request, response) => {
+    if (!request.pendingAccess?.application) {
+      return sendError(response, 401, 'Потрібен тимчасовий доступ до заявки.');
+    }
+
+    recordAuditLog({
+      actor: { role: 'pending_application', fullName: request.pendingAccess.application.applicantFullName },
+      stationId: request.pendingAccess.application.stationId,
+      entityType: 'application',
+      entityId: request.pendingAccess.application.id,
+      action: 'pending_view',
+      summary: `Відкрито тимчасовий кабінет заяви ${request.pendingAccess.application.applicationNumber}.`,
+      after: { applicationNumber: request.pendingAccess.application.applicationNumber },
+    });
+
+    return response.json({
+      application: request.pendingAccess.application,
+    });
+  });
+
+  app.put('/api/pending/application', (request, response) => {
+    if (!request.pendingAccess?.application) {
+      return sendError(response, 401, 'Потрібен тимчасовий доступ до заявки.');
+    }
+
+    try {
+      const payload = validatePublicRegistrationPayload(request.body);
+      const application = resubmitPendingApplication(request.pendingAccess.application.id, payload);
+
+      response.json({
         application,
       });
     } catch (error) {
@@ -912,6 +1113,32 @@ export function createApp({ clientUrl }) {
     }
   });
 
+  app.post('/api/customer/applications', requireAuth, requireCustomer, (request, response) => {
+    try {
+      const payload = validateCustomerApplicationPayload(request.body, request.auth.user);
+      const application = createApplication({
+        ...payload,
+        createdBy: request.auth.user.id,
+      }, request.auth.user);
+      const safeApplication = getApplicationById(application.id, {
+        includeHiddenStages: false,
+        includePrivate: true,
+        includePrivateStatusHistory: false,
+        includeNotifications: false,
+      });
+
+      response.status(201).json({
+        application: safeApplication,
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return sendError(response, 409, 'Заява з таким номером уже існує.');
+      }
+
+      return sendError(response, 400, error.message);
+    }
+  });
+
   app.get(
     '/api/applications/:applicationId',
     requireAuth,
@@ -928,9 +1155,36 @@ export function createApp({ clientUrl }) {
     requireAuth,
     requireStaff,
     requireApplicationAccess,
-    (request, response) => {
+    async (request, response) => {
       try {
-        const payload = validateApplicationPayload(request.body, request.auth.user);
+        const payload = validateApplicationPayload(request.body, request.auth.user, {
+          defaultStatus: request.application.status,
+        });
+        const isAcceptingPendingApplication =
+          !request.application.customerUserId
+          && request.application.status !== 'accepted'
+          && payload.status === 'accepted';
+
+        if (isAcceptingPendingApplication) {
+          const temporaryPassword = generateTemporaryPassword(6);
+          const passwordHash = await hashPassword(temporaryPassword);
+          const result = acceptPendingApplication(request.application.id, {
+            actor: request.auth.user,
+            passwordHash,
+            temporaryPassword,
+          });
+
+          if (!result) {
+            return sendError(response, 404, 'Заяву не знайдено.');
+          }
+
+          return response.json({
+            application: result.application,
+            accessPrepared: true,
+            createdUser: result.createdUser,
+          });
+        }
+
         const application = updateApplication(request.application.id, payload, request.auth.user);
 
         if (!application) {

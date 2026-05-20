@@ -11,6 +11,9 @@ import { CustomerPanel, UserCreateForm } from './staff/CustomerPanel';
 import { DashboardModal, StaffLayout } from './staff/StaffLayout';
 import { StationCreateForm } from './staff/StationSettingsPanel';
 import {
+  getApplicationStatusTransitionOptions,
+} from '../connectionContent';
+import {
   DEFAULT_APPLICATION_TYPE_ID,
   createEmptyQuestionnaireValues,
   getApplicationTypeConfig,
@@ -43,7 +46,7 @@ function createEmptyApplicationForm(user) {
     email: '',
     objectAddress: '',
     connectionType: 'standard',
-    status: 'in_progress',
+    status: 'submitted',
     receivedAt: getToday(),
     responsibleName: '',
     notes: '',
@@ -147,6 +150,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
   const [deadlineDrafts, setDeadlineDrafts] = useState({});
   const [stageTemplateDrafts, setStageTemplateDrafts] = useState({});
   const [deadlineDataDraft, setDeadlineDataDraft] = useState({});
+  const [statusDraft, setStatusDraft] = useState({ status: '', comment: '' });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [panelMessage, setPanelMessage] = useState('');
@@ -166,6 +170,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
   const [savingSettingKey, setSavingSettingKey] = useState('');
   const [savingDeadlineKey, setSavingDeadlineKey] = useState('');
   const [savingDeadlineData, setSavingDeadlineData] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
   const [savingStageTemplateId, setSavingStageTemplateId] = useState(null);
   const [deletingApplicationId, setDeletingApplicationId] = useState(null);
   const [deletingUserId, setDeletingUserId] = useState(null);
@@ -256,6 +261,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
     if (!selectedApplication) {
       setStageDrafts({});
       setDeadlineDataDraft({});
+      setStatusDraft({ status: '', comment: '' });
       return;
     }
 
@@ -265,6 +271,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
       ),
     );
     setDeadlineDataDraft(selectedApplication.deadlineData ?? {});
+    setStatusDraft({ status: selectedApplication.status, comment: '' });
   }, [selectedApplication?.id, selectedApplication?.updatedAt]);
 
   async function handleCreateStation(event) {
@@ -455,6 +462,48 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
     }
   }
 
+  async function handleSaveStatus() {
+    if (!selectedApplication || statusDraft.status === selectedApplication.status) {
+      return;
+    }
+
+    setSavingStatus(true);
+    setPanelMessage('');
+
+    try {
+      const response = await api.updateApplication(selectedApplication.id, {
+        stationId: selectedApplication.stationId,
+        applicationNumber: selectedApplication.applicationNumber,
+        applicantFullName: selectedApplication.applicantFullName,
+        phone: selectedApplication.phone,
+        email: selectedApplication.email ?? '',
+        objectAddress: selectedApplication.objectAddress,
+        connectionType: selectedApplication.connectionType,
+        status: statusDraft.status,
+        statusComment: statusDraft.comment,
+        receivedAt: selectedApplication.receivedAt,
+        responsibleName: selectedApplication.responsibleName ?? '',
+        notes: selectedApplication.notes ?? '',
+        appendixData: selectedApplication.appendixData ?? {},
+        deadlineData: selectedApplication.deadlineData ?? {},
+        customerUserId: selectedApplication.customerUserId ?? null,
+      });
+
+      setApplications((current) =>
+        current.map((application) =>
+          application.id === response.application.id ? response.application : application,
+        ),
+      );
+      setPanelMessage(response.accessPrepared
+        ? 'Заяву прийнято. Кабінет замовника створено або прив’язано, email-повідомлення з доступом підготовлено.'
+        : 'Статус заяви оновлено.');
+    } catch (actionError) {
+      setPanelMessage(actionError.message);
+    } finally {
+      setSavingStatus(false);
+    }
+  }
+
   async function handleGenerateDocument(documentType) {
     if (!selectedApplication) {
       return;
@@ -640,6 +689,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
           onDeleteApplication={handleDeleteApplication}
           onSelectApplication={setSelectedApplicationId}
           selectedApplicationId={selectedApplicationId}
+          stations={stations}
         />
       ) : null}
 
@@ -656,13 +706,18 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
         <section className="application-detail-grid">
           <ApplicationDetail
             appendix3Fields={appendix3Fields}
+            availableStatusOptions={getApplicationStatusTransitionOptions(selectedApplication.status, { isAdmin })}
             deadlineDataDraft={deadlineDataDraft}
             disabledDeadlineData={savingDeadlineData}
+            disabledStatus={savingStatus}
             getQuestionnaireFields={getQuestionnaireFields}
             getQuestionnaireTypeDetails={getQuestionnaireTypeDetails}
             onSaveDeadlineData={handleSaveDeadlineData}
+            onSaveStatus={handleSaveStatus}
             selectedApplication={selectedApplication}
             setDeadlineDataDraft={setDeadlineDataDraft}
+            setStatusDraft={setStatusDraft}
+            statusDraft={statusDraft}
           />
 
           <ApplicationDocumentsPanel

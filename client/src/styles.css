@@ -309,6 +309,46 @@ p {
   flex-wrap: wrap;
 }
 
+.success-message {
+  margin: 0 0 18px;
+  border-color: #cfe7d8;
+  background: #eef8f1;
+  color: #285c3a;
+  font-weight: 700;
+}
+
+.clarification-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  border-color: #ecd99a;
+  background: #fffaf0;
+}
+
+.clarification-card h2 {
+  margin: 4px 0 8px;
+}
+
+.customer-application-tab {
+  gap: 8px;
+}
+
+.customer-application-tab .application-card__topline {
+  justify-content: space-between;
+}
+
+.customer-application-form {
+  margin-top: 6px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .manager-top-grid,
 .manager-simple-grid {
   display: grid;
@@ -879,6 +919,74 @@ p {
   gap: 12px;
 }
 
+.registry-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.5fr) minmax(180px, 0.8fr) minmax(200px, 0.8fr);
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.registry-search {
+  min-width: 0;
+}
+
+.registry-station-note {
+  display: grid;
+  gap: 8px;
+  min-height: 72px;
+  align-content: center;
+  padding: 10px 12px;
+  border: 1px solid #d8e0e8;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.registry-station-note span {
+  color: #677789;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.registry-station-note strong {
+  color: #273547;
+  overflow-wrap: anywhere;
+}
+
+.registry-filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.registry-filter-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d8e0e8;
+  border-radius: 999px;
+  padding: 8px 11px;
+  background: #f8fafc;
+  color: #334154;
+  font-weight: 700;
+}
+
+.registry-filter-tab strong {
+  min-width: 26px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e8eef5;
+  color: #273547;
+  text-align: center;
+}
+
+.registry-filter-tab.is-active {
+  border-color: #6f89a5;
+  background: #edf4fa;
+  color: #203247;
+}
+
 .application-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -897,7 +1005,7 @@ p {
 
 .application-card__main {
   display: grid;
-  gap: 4px;
+  gap: 7px;
   min-width: 0;
   border: 0;
   padding: 0;
@@ -913,6 +1021,68 @@ p {
 
 .application-card__main span:not(.section-kicker) {
   color: #627284;
+}
+
+.application-card__topline,
+.application-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.application-card__meta span,
+.application-card__status-note {
+  font-size: 0.9rem;
+}
+
+.application-card__status-note {
+  color: #627284;
+}
+
+.application-status-pill {
+  width: fit-content;
+  background: #edf1f5;
+  color: #405063;
+}
+
+.application-status-pill--submitted {
+  background: #e8f3f8;
+  border-color: #c6dde9;
+  color: #22536b;
+}
+
+.application-status-pill--accepted,
+.application-status-pill--in_progress,
+.application-status-pill--under_review {
+  background: #edf4ea;
+  border-color: #d2e5cb;
+  color: #38612e;
+}
+
+.application-status-pill--needs_clarification {
+  background: #fff7df;
+  border-color: #ecd99a;
+  color: #715a12;
+}
+
+.application-status-pill--technical_conditions_ready,
+.application-status-pill--agreement_ready {
+  background: #eef1fb;
+  border-color: #d5dcef;
+  color: #374b83;
+}
+
+.application-status-pill--completed {
+  background: #e8f4ed;
+  border-color: #cfe7d8;
+  color: #2d6742;
+}
+
+.application-status-pill--rejected {
+  background: #fff2f1;
+  border-color: #e4b8b4;
+  color: #993c35;
 }
 
 .application-card__actions {
@@ -1316,6 +1486,44 @@ p {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.public-application-form {
+  margin-top: 10px;
+}
+
+.form-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.form-progress__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-color);
+}
+
+.form-progress__track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.form-progress__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0ea5e9, #22c55e);
+  transition: width 180ms ease;
+}
+
+.success-card,
+.lookup-result {
+  display: grid;
+  gap: 14px;
 }
 
 .registration-section {
@@ -1735,7 +1943,8 @@ p {
   .connection-deadline-grid,
   .detail-meta-grid,
   .appendix-data-grid,
-  .stage-editor__controls {
+  .stage-editor__controls,
+  .registry-toolbar {
     grid-template-columns: 1fr;
   }
 

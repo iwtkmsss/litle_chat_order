@@ -1,14 +1,78 @@
-export const applicationStatusLabels = {
-  draft: 'Чернетка',
-  in_progress: 'В роботі',
+export const APPLICATION_STATUSES = [
+  'submitted',
+  'accepted',
+  'needs_clarification',
+  'under_review',
+  'technical_conditions_ready',
+  'agreement_ready',
+  'completed',
+  'rejected',
+  'draft',
+  'in_progress',
+];
+
+export const APPLICATION_STATUS_LABELS = {
+  submitted: 'Подано',
+  accepted: 'Прийнято в обробку',
+  needs_clarification: 'Потребує уточнення',
+  under_review: 'На технічному розгляді',
+  technical_conditions_ready: 'Технічні умови підготовлено',
+  agreement_ready: 'Договір підготовлено',
   completed: 'Завершено',
-  rejected: 'Відмова',
+  rejected: 'Відмовлено / повернуто',
+  draft: 'Чернетка',
+  in_progress: 'Прийнято в обробку',
 };
+
+export const APPLICATION_STATUS_DESCRIPTIONS = {
+  submitted: 'Заяву отримано. Очікує первинної перевірки.',
+  accepted: 'Заяву прийнято в роботу.',
+  needs_clarification: 'Потрібно уточнити дані або додати документи.',
+  under_review: 'Заява перебуває на технічному розгляді.',
+  technical_conditions_ready: 'Технічні умови підготовлено.',
+  agreement_ready: 'Договір підготовлено.',
+  completed: 'Роботу із заявкою завершено.',
+  rejected: 'Заявку повернуто або відмовлено із зазначенням причини.',
+  draft: 'Заява збережена як чернетка.',
+  in_progress: 'Заяву прийнято в роботу.',
+};
+
+export const APPLICATION_STATUS_TRANSITIONS = {
+  submitted: ['accepted', 'needs_clarification', 'rejected'],
+  accepted: ['needs_clarification', 'under_review', 'rejected'],
+  needs_clarification: ['submitted', 'accepted', 'under_review', 'rejected'],
+  under_review: ['needs_clarification', 'technical_conditions_ready', 'rejected'],
+  technical_conditions_ready: ['agreement_ready', 'needs_clarification', 'rejected'],
+  agreement_ready: ['completed', 'needs_clarification', 'rejected'],
+  completed: [],
+  rejected: [],
+  draft: ['submitted', 'accepted', 'rejected'],
+  in_progress: ['accepted', 'needs_clarification', 'under_review', 'completed', 'rejected'],
+};
+
+export const applicationStatusLabels = APPLICATION_STATUS_LABELS;
+export const applicationStatusDescriptions = APPLICATION_STATUS_DESCRIPTIONS;
+
+export function getApplicationStatusTransitionOptions(status, { isAdmin = false } = {}) {
+  const allowed = APPLICATION_STATUS_TRANSITIONS[status] ?? [];
+  const fallback = isAdmin
+    ? APPLICATION_STATUSES.filter((item) => item !== status && !['draft', 'in_progress'].includes(item))
+    : [];
+  const values = allowed.length > 0 ? allowed : fallback;
+
+  return values.map((value) => ({
+    value,
+    label: APPLICATION_STATUS_LABELS[value] ?? value,
+  }));
+}
 
 export const roleLabels = {
   admin: 'Адміністратор',
   manager: 'Менеджер',
   customer: 'Замовник',
+  guest: 'Гість',
+  pending_application: 'Тимчасовий доступ',
+  system: 'Система',
 };
 
 export const connectionTypeLabels = {

@@ -135,6 +135,19 @@ export function StageTemplatesPanel({
               <div className="stage-editor__footer">
                 <label className="access-toggle">
                   <input
+                    checked={Boolean(draft.isOptional)}
+                    onChange={(event) =>
+                      setStageTemplateDrafts((current) => ({
+                        ...current,
+                        [template.id]: { ...draft, isOptional: event.target.checked },
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>Етап за необхідності</span>
+                </label>
+                <label className="access-toggle">
+                  <input
                     checked={draft.isActive}
                     onChange={(event) =>
                       setStageTemplateDrafts((current) => ({

@@ -2,18 +2,24 @@ import { useState } from 'react';
 import { api } from '../api';
 import {
   appendixDocumentDetails,
+  applicationStatusDescriptions,
+  applicationStatusLabels,
   connectionInfoSections,
   documentSamples,
   legalBase,
 } from '../connectionContent';
-import { ApplicationProgress } from './ApplicationProgress';
 
-const navItems = [
-  { id: 'connection', label: 'Приєднання', path: '/' },
-  { id: 'status', label: 'Перевірити заяву', path: '/status' },
-  { id: 'documents', label: 'Документи', path: '/documents' },
-  { id: 'login', label: 'Вхід', path: '/login' },
-];
+function getCabinetPath(user) {
+  if (user?.role === 'admin') {
+    return '/admin';
+  }
+
+  if (user?.role === 'manager') {
+    return '/manager';
+  }
+
+  return '/customer';
+}
 
 const deadlineHighlights = [
   ['10', 'робочих днів', 'підготовка договору, ТУ та рахунку'],
@@ -22,12 +28,11 @@ const deadlineHighlights = [
   ['1', 'календарний день', 'тимчасове приєднання'],
 ];
 
-export function ConnectionPortal({ activePage = 'connection', onNavigate }) {
+export function ConnectionPortal({ activePage = 'connection', onNavigate, pendingAccess, user }) {
   const [activeModal, setActiveModal] = useState(null);
   const [lookupForm, setLookupForm] = useState({
-    phone: '',
-    fullName: '',
     applicationNumber: '',
+    email: '',
   });
   const [lookupResult, setLookupResult] = useState(null);
   const [lookupError, setLookupError] = useState('');
@@ -41,7 +46,7 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate }) {
 
     try {
       const response = await api.lookupApplication(lookupForm);
-      setLookupResult(response.application);
+      setLookupResult(response);
     } catch (lookupIssue) {
       setLookupError(lookupIssue.message);
     } finally {
@@ -52,6 +57,17 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate }) {
   function handleNavigate(item) {
     onNavigate?.(item.path);
   }
+
+  const navItems = [
+    { id: 'connection', label: 'Приєднання', path: '/' },
+    { id: 'status', label: 'Перевірити заяву', path: '/status' },
+    { id: 'documents', label: 'Документи', path: '/documents' },
+    user
+      ? { id: 'cabinet', label: 'Особистий кабінет', path: getCabinetPath(user) }
+      : pendingAccess
+        ? { id: 'pending', label: 'Моя заява', path: pendingAccess.path }
+        : { id: 'login', label: 'Вхід', path: '/login' },
+  ];
 
   return (
     <main className="workspace-shell public-shell">
@@ -133,38 +149,12 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate }) {
             <span className="section-kicker">Отримати інформацію</span>
             <h1>Перевірити стан заяви</h1>
             <p className="muted-copy">
-              Введіть номер телефону та ПІБ або номер заяви, щоб побачити етапи виконання
-              приєднання до теплових мереж.
+              Введіть номер заявки та email, які були вказані під час подання заяви.
             </p>
           </header>
 
           <section className="surface-card lookup-card">
             <form className="lookup-form" onSubmit={handleLookup}>
-              <label className="field-block">
-                <span>Номер телефону</span>
-                <input
-                  className="field-input"
-                  disabled={isLookingUp}
-                  onChange={(event) =>
-                    setLookupForm((current) => ({ ...current, phone: event.target.value }))
-                  }
-                  required
-                  value={lookupForm.phone}
-                />
-              </label>
-
-              <label className="field-block">
-                <span>Прізвище Ім’я По батькові</span>
-                <input
-                  className="field-input"
-                  disabled={isLookingUp}
-                  onChange={(event) =>
-                    setLookupForm((current) => ({ ...current, fullName: event.target.value }))
-                  }
-                  value={lookupForm.fullName}
-                />
-              </label>
-
               <label className="field-block">
                 <span>Номер заяви</span>
                 <input
@@ -177,13 +167,47 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate }) {
                 />
               </label>
 
+              <label className="field-block">
+                <span>Email</span>
+                <input
+                  className="field-input"
+                  disabled={isLookingUp}
+                  onChange={(event) =>
+                    setLookupForm((current) => ({ ...current, email: event.target.value }))
+                  }
+                  required
+                  type="email"
+                  value={lookupForm.email}
+                />
+              </label>
+
               <button className="primary-button" disabled={isLookingUp} type="submit">
                 {isLookingUp ? 'Пошук...' : 'Отримати інформацію'}
               </button>
             </form>
 
             {lookupError ? <p className="form-error">{lookupError}</p> : null}
-            {lookupResult ? <ApplicationProgress application={lookupResult} compact /> : null}
+            {lookupResult ? (
+              <div className="lookup-result">
+                <article className="stage-note">
+                  <strong>Заява {lookupResult.application.applicationNumber}</strong>
+                  <br />
+                  Статус: {applicationStatusLabels[lookupResult.application.status] ?? lookupResult.application.status}
+                  <br />
+                  {applicationStatusDescriptions[lookupResult.application.status] ?? 'Поточний статус заявки.'}
+                </article>
+                {lookupResult.requiresLogin ? (
+                  <p className="stage-note">
+                    Заявку прийнято. Для перегляду деталей увійдіть в особистий кабінет.
+                  </p>
+                ) : null}
+                {lookupResult.accessPath ? (
+                  <button className="primary-button" onClick={() => onNavigate?.(lookupResult.accessPath)} type="button">
+                    Перейти до заявки
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </section>
         </section>
       ) : null}

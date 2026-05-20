@@ -29,6 +29,7 @@ export const databasePath = resolveFromServerRoot(
   path.join(dataDir, 'chat-storage.db'),
 );
 export const sessionCookieName = 'lco_session';
+export const pendingSessionCookieName = 'lco_pending_access';
 export const sessionDurationMs = 1000 * 60 * 60 * 24 * 30;
 export const uploadFileLimit = 20 * 1024 * 1024;
 export const uploadFilesPerMessage = 5;
