@@ -1,11 +1,75 @@
+import { useEffect, useState } from 'react';
 import {
-  applicationStatusDescriptions,
-  applicationStatusLabels,
   connectionTypeLabels,
   deadlineStatusLabels,
+  getApplicationStatusDescription,
+  getApplicationStatusLabel,
   roleLabels,
 } from '../../connectionContent';
+import { api } from '../../api';
 import { formatDate, formatDateTime } from '../../utils';
+
+const statusActionLabels = {
+  accepted: 'Прийняти в роботу',
+  needs_clarification: 'Повернути на доповнення',
+  rejected: 'Відхилити',
+  under_review: 'Передати на технічний розгляд',
+  technical_conditions_ready: 'Позначити ТУ підготовленими',
+  agreement_ready: 'Позначити договір підготовленим',
+  completed: 'Завершити заявку',
+  submitted: 'Повернути до нової заявки',
+};
+
+const statusCommentLabels = {
+  needs_clarification: 'Що потрібно уточнити?',
+  rejected: 'Причина відхилення або повернення',
+};
+
+function getAccessState(application) {
+  if (application.customerUserId) {
+    return {
+      tone: 'success',
+      title: 'Особистий кабінет створено.',
+      lines: ['Замовник може увійти через email і тимчасовий пароль.'],
+    };
+  }
+
+  if (application.status === 'needs_clarification') {
+    return {
+      tone: 'warning',
+      title: 'Тимчасовий кабінет активний.',
+      lines: [
+        'Замовник може відредагувати та повторно надіслати заяву.',
+        'Повноцінний особистий кабінет ще не створено.',
+      ],
+    };
+  }
+
+  if (application.status === 'rejected') {
+    return {
+      tone: 'danger',
+      title: 'Заявку відхилено або повернуто.',
+      lines: ['Особистий кабінет не створювався.'],
+    };
+  }
+
+  return {
+    tone: 'info',
+    title: 'Тимчасовий кабінет активний.',
+    lines: [
+      'Повноцінний особистий кабінет ще не створено.',
+      'Він буде створений після прийняття заявки в роботу.',
+    ],
+  };
+}
+
+function getStatusActionLabel(currentStatus, nextStatus, fallbackLabel) {
+  if (currentStatus === 'needs_clarification' && nextStatus === 'accepted') {
+    return 'Прийняти повторно в роботу';
+  }
+
+  return statusActionLabels[nextStatus] ?? fallbackLabel;
+}
 
 export function ApplicationDetail({
   appendix3Fields,
@@ -15,6 +79,7 @@ export function ApplicationDetail({
   disabledStatus,
   getQuestionnaireFields,
   getQuestionnaireTypeDetails,
+  isAdmin,
   onSaveDeadlineData,
   onSaveStatus,
   selectedApplication,
@@ -22,12 +87,62 @@ export function ApplicationDetail({
   setStatusDraft,
   statusDraft,
 }) {
-  const needsStatusComment = ['needs_clarification', 'rejected'].includes(statusDraft.status)
+  const [revealedAccess, setRevealedAccess] = useState(null);
+  const [isRevealingAccess, setIsRevealingAccess] = useState(false);
+  const [accessError, setAccessError] = useState('');
+  const commentRequired = ['needs_clarification', 'rejected'].includes(statusDraft.status)
     && statusDraft.status !== selectedApplication.status;
-  const isStatusCommentMissing = statusDraft.status === 'needs_clarification'
-    && statusDraft.status !== selectedApplication.status
-    && !statusDraft.comment.trim();
-  const canChangeStatus = availableStatusOptions.length > 0;
+  const isStatusCommentMissing = commentRequired && !statusDraft.comment.trim();
+  const actionOptions = availableStatusOptions.filter(
+    (option) => !(selectedApplication.status === 'needs_clarification' && option.value === 'submitted'),
+  );
+  const canChangeStatus = actionOptions.length > 0;
+  const currentStatusLabel = getApplicationStatusLabel(selectedApplication.status, 'manager');
+  const currentStatusDescription = getApplicationStatusDescription(selectedApplication.status, 'manager');
+  const accessState = getAccessState(selectedApplication);
+  const accessNotification = selectedApplication.notifications?.find(
+    (notification) => notification.notificationType === 'customer_access_prepared',
+  );
+
+  useEffect(() => {
+    setRevealedAccess(null);
+    setAccessError('');
+  }, [selectedApplication.id]);
+
+  async function handleRevealAccess() {
+    setIsRevealingAccess(true);
+    setAccessError('');
+
+    try {
+      const response = await api.revealCustomerAccess(selectedApplication.id);
+      setRevealedAccess(response);
+    } catch (error) {
+      setAccessError(error.message);
+    } finally {
+      setIsRevealingAccess(false);
+    }
+  }
+
+  async function handleCopyPassword() {
+    if (!revealedAccess?.temporaryPassword) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(revealedAccess.temporaryPassword);
+      setAccessError('');
+    } catch {
+      setAccessError('Не вдалося скопіювати пароль. Виділіть його вручну.');
+    }
+  }
+
+  function selectStatusAction(status) {
+    setStatusDraft({ status, comment: '' });
+
+    if (!['needs_clarification', 'rejected'].includes(status)) {
+      onSaveStatus({ status, comment: '' });
+    }
+  }
 
   return (
     <section className="surface-card manager-card">
@@ -42,7 +157,7 @@ export function ApplicationDetail({
       <div className="detail-meta-grid">
         <span>{selectedApplication.stationName}</span>
         <span>{connectionTypeLabels[selectedApplication.connectionType]}</span>
-        <span>{applicationStatusLabels[selectedApplication.status]}</span>
+        <span>{currentStatusLabel}</span>
         <span>Телефон: {selectedApplication.phone}</span>
         <span>Email: {selectedApplication.email || 'не вказано'}</span>
         <span>Дата заяви: {formatDate(selectedApplication.receivedAt)}</span>
@@ -51,47 +166,62 @@ export function ApplicationDetail({
 
       <div className="appendix-data-view">
         <h3>Статус заявки</h3>
-        {!selectedApplication.customerUserId ? (
+        <p className="stage-note">
+          <strong>{currentStatusLabel}</strong>
+          <br />
+          {currentStatusDescription}
+        </p>
+      </div>
+
+      <CustomerAccessBlock
+        accessError={accessError}
+        accessNotification={accessNotification}
+        accessState={accessState}
+        application={selectedApplication}
+        isRevealingAccess={isRevealingAccess}
+        onCopyPassword={handleCopyPassword}
+        onHidePassword={() => setRevealedAccess(null)}
+        onRevealAccess={handleRevealAccess}
+        revealedAccess={revealedAccess}
+      />
+
+      <div className="appendix-data-view">
+        <h3>Дії із заявкою</h3>
+        {!canChangeStatus ? (
           <p className="stage-note">
-            Це pending-заява без створеного кабінету замовника. Після переходу в статус
-            “Прийнято в обробку” система створить або прив’яже кабінет замовника та підготує
-            email-повідомлення з доступом.
+            {selectedApplication.status === 'completed'
+              ? 'Заявку завершено.'
+              : selectedApplication.status === 'rejected'
+                ? 'Заявку закрито.'
+                : 'Немає доступних переходів для поточного статусу.'}
           </p>
         ) : null}
-        <p className="stage-note">
-          <strong>{applicationStatusLabels[selectedApplication.status] ?? selectedApplication.status}</strong>
-          <br />
-          {applicationStatusDescriptions[selectedApplication.status] ?? 'Поточний статус заявки.'}
-        </p>
+        {isAdmin && ['completed', 'rejected'].includes(selectedApplication.status) && canChangeStatus ? (
+          <p className="stage-note">
+            Адмінське перевизначення: ці дії доступні тільки адміністратору й будуть записані в журнал.
+          </p>
+        ) : null}
 
-        <div className="stage-editor__controls">
-          <label className="field-block">
-            <span>Наступний статус</span>
-            <select
-              className="field-input"
-              disabled={disabledStatus || !canChangeStatus}
-              onChange={(event) =>
-                setStatusDraft((current) => ({
-                  ...current,
-                  status: event.target.value,
-                }))
-              }
-              value={statusDraft.status}
-            >
-              <option value={selectedApplication.status}>
-                {canChangeStatus ? 'Оберіть наступний статус' : 'Немає доступних переходів'}
-              </option>
-              {availableStatusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+        {canChangeStatus ? (
+          <div className="application-action-grid">
+            {actionOptions.map((option) => (
+              <button
+                className={option.value === 'rejected' ? 'danger-button' : 'secondary-button'}
+                disabled={disabledStatus}
+                key={option.value}
+                onClick={() => selectStatusAction(option.value)}
+                type="button"
+              >
+                {getStatusActionLabel(selectedApplication.status, option.value, option.label)}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
-          {needsStatusComment ? (
+        {commentRequired ? (
+          <>
             <label className="field-block field-block--wide">
-              <span>{statusDraft.status === 'needs_clarification' ? 'Що потрібно уточнити?' : 'Причина рішення'}</span>
+              <span>{statusCommentLabels[statusDraft.status] ?? 'Коментар для замовника'}</span>
               <textarea
                 className="field-input field-textarea"
                 disabled={disabledStatus}
@@ -101,22 +231,24 @@ export function ApplicationDetail({
                     comment: event.target.value,
                   }))
                 }
-                required={statusDraft.status === 'needs_clarification'}
+                required
                 rows={3}
                 value={statusDraft.comment}
               />
             </label>
-          ) : null}
-        </div>
 
-        <button
-          className="primary-button"
-          disabled={disabledStatus || !canChangeStatus || statusDraft.status === selectedApplication.status || isStatusCommentMissing}
-          onClick={onSaveStatus}
-          type="button"
-        >
-          {disabledStatus ? 'Збереження...' : 'Оновити статус'}
-        </button>
+            <button
+              className={statusDraft.status === 'rejected' ? 'danger-button' : 'primary-button'}
+              disabled={disabledStatus || isStatusCommentMissing}
+              onClick={() => onSaveStatus(statusDraft)}
+              type="button"
+            >
+              {disabledStatus
+                ? 'Збереження...'
+                : getStatusActionLabel(selectedApplication.status, statusDraft.status, 'Підтвердити дію')}
+            </button>
+          </>
+        ) : null}
       </div>
 
       {selectedApplication.notes ? <p className="stage-note">{selectedApplication.notes}</p> : null}
@@ -163,6 +295,92 @@ export function ApplicationDetail({
   );
 }
 
+function CustomerAccessBlock({
+  accessError,
+  accessNotification,
+  accessState,
+  application,
+  isRevealingAccess,
+  onCopyPassword,
+  onHidePassword,
+  onRevealAccess,
+  revealedAccess,
+}) {
+  return (
+    <div className={`appendix-data-view customer-access-card customer-access-card--${accessState.tone}`}>
+      <h3>Доступ замовника</h3>
+      <p className="stage-note">
+        <strong>{accessState.title}</strong>
+        <br />
+        {accessState.lines.join(' ')}
+      </p>
+
+      <div className="appendix-data-grid">
+        <span>
+          <strong>Email / логін</strong>
+          {application.email || application.customerUserName || 'не вказано'}
+        </span>
+        <span>
+          <strong>Стан доступу</strong>
+          {application.customerUserId ? 'Кабінет створено' : 'Тільки тимчасовий кабінет'}
+        </span>
+        {accessNotification ? (
+          <span>
+            <strong>Email-повідомлення</strong>
+            {accessNotification.status === 'prepared' ? 'Підготовлено' : 'Не підготовлено'}
+          </span>
+        ) : null}
+      </div>
+
+      {application.customerUserId ? (
+        <div className="customer-access-card__actions">
+          {!revealedAccess ? (
+            <button
+              className="secondary-button"
+              disabled={isRevealingAccess}
+              onClick={onRevealAccess}
+              type="button"
+            >
+              {isRevealingAccess ? 'Завантаження...' : 'Показати тимчасовий пароль'}
+            </button>
+          ) : (
+            <div className="customer-access-secret">
+              <div className="appendix-data-grid">
+                <span>
+                  <strong>Логін</strong>
+                  {revealedAccess.login}
+                </span>
+                <span>
+                  <strong>Тимчасовий пароль</strong>
+                  <code>{revealedAccess.temporaryPassword}</code>
+                </span>
+              </div>
+              <p className="stage-note">
+                Це тимчасовий пароль для першого входу замовника. Не передавайте його стороннім особам.
+                Після підключення реальної email-відправки доступ буде передаватися автоматично.
+              </p>
+              <div className="header-actions">
+                <button className="secondary-button" onClick={onCopyPassword} type="button">
+                  Скопіювати пароль
+                </button>
+                <button className="secondary-button" onClick={onHidePassword} type="button">
+                  Сховати пароль
+                </button>
+              </div>
+            </div>
+          )}
+          {accessError ? <p className="form-error">{accessError}</p> : null}
+          {!accessError && !accessNotification ? (
+            <p className="stage-note">
+              Тимчасовий пароль недоступний. Потрібно сформувати новий доступ окремою дією.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StatusHistory({ entries }) {
   if (!entries.length) {
     return null;
@@ -175,9 +393,9 @@ function StatusHistory({ entries }) {
         {entries.map((entry) => (
           <article className="email-log-item" key={entry.id}>
             <strong>
-              {applicationStatusLabels[entry.fromStatus] ?? entry.fromStatus ?? 'Створено'}
+              {entry.fromStatus ? getApplicationStatusLabel(entry.fromStatus, 'manager') : 'Створено'}
               {' → '}
-              {applicationStatusLabels[entry.toStatus] ?? entry.toStatus}
+              {getApplicationStatusLabel(entry.toStatus, 'manager')}
             </strong>
             {entry.comment ? <span>{entry.comment}</span> : null}
             <small>

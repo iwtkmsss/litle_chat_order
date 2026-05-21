@@ -46,7 +46,7 @@ export function getAllowedApplicationStatusTransitions(status) {
 }
 
 export function doesApplicationStatusRequireComment(status) {
-  return status === 'needs_clarification';
+  return ['needs_clarification', 'rejected'].includes(status);
 }
 
 export function isCustomerVisibleStatusComment(status) {
@@ -68,7 +68,8 @@ export function assertApplicationStatusTransition({
   }
 
   if (doesApplicationStatusRequireComment(toStatus) && !String(comment).trim()) {
-    throw new Error('Для статусу "Потребує уточнення" потрібно вказати коментар для замовника.');
+    const label = APPLICATION_STATUS_LABELS[toStatus] ?? toStatus;
+    throw new Error(`Для статусу "${label}" потрібно вказати коментар для замовника.`);
   }
 
   const allowedStatuses = getAllowedApplicationStatusTransitions(fromStatus);

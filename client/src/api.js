@@ -208,6 +208,12 @@ export const api = {
     });
   },
 
+  revealCustomerAccess(applicationId) {
+    return request(`/api/applications/${applicationId}/customer-access/reveal`, {
+      method: 'POST',
+    });
+  },
+
   deleteApplication(applicationId) {
     return request(`/api/applications/${applicationId}`, {
       method: 'DELETE',

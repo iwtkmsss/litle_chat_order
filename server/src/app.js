@@ -46,6 +46,7 @@ import {
   removePendingApplicationSession,
   replaceChatAccess,
   resubmitPendingApplication,
+  revealCustomerAccessCredentials,
   updateApplication,
   updateApplicationStage,
   updateDeadlineRule,
@@ -79,6 +80,9 @@ import { removeStoredFiles, removeUploadedFiles, upload } from './uploads.js';
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const documentTypes = new Set(['appendix1', 'appendix2', 'appendix3', 'appendix4', 'appendix5']);
 const durationUnits = new Set(['calendar_days', 'business_days', 'months']);
+const statusLookupAttempts = new Map();
+const statusLookupWindowMs = 10 * 60 * 1000;
+const statusLookupMaxAttempts = 8;
 
 function isUniqueConstraintError(error) {
   return error?.code === 'SQLITE_CONSTRAINT_UNIQUE';
@@ -86,6 +90,27 @@ function isUniqueConstraintError(error) {
 
 function sendError(response, status, message) {
   response.status(status).json({ error: message });
+}
+
+function getStatusLookupRateKey(request, payload) {
+  const email = String(payload?.email ?? request.body?.email ?? '').trim().toLowerCase();
+  const applicationNumber = String(payload?.applicationNumber ?? request.body?.applicationNumber ?? '').trim().toLowerCase();
+  return `${request.ip ?? 'unknown'}:${email}:${applicationNumber}`;
+}
+
+function isStatusLookupRateLimited(key) {
+  const now = Date.now();
+  const bucket = statusLookupAttempts.get(key) ?? [];
+  const recentAttempts = bucket.filter((timestamp) => now - timestamp < statusLookupWindowMs);
+
+  if (recentAttempts.length >= statusLookupMaxAttempts) {
+    statusLookupAttempts.set(key, recentAttempts);
+    return true;
+  }
+
+  recentAttempts.push(now);
+  statusLookupAttempts.set(key, recentAttempts);
+  return false;
 }
 
 function validateOptionalText(value, maxLength, fieldName) {
@@ -832,6 +857,23 @@ export function createApp({ clientUrl }) {
   app.post('/api/public/applications/lookup', (request, response) => {
     try {
       const payload = validateLookupPayload(request.body);
+      const rateKey = getStatusLookupRateKey(request, payload);
+
+      if (isStatusLookupRateLimited(rateKey)) {
+        recordAuditLog({
+          actor: { role: 'guest', fullName: 'Публічна перевірка' },
+          entityType: 'application',
+          entityId: payload.applicationNumber || 'unknown',
+          action: 'status_lookup_rate_limited',
+          summary: 'Публічну перевірку заяви обмежено через забагато спроб.',
+          after: {
+            applicationNumber: payload.applicationNumber,
+            ip: request.ip ?? '',
+          },
+        });
+        return sendError(response, 429, 'Забагато спроб перевірки. Спробуйте пізніше.');
+      }
+
       const result = lookupPublicApplication(payload, getRequestMetadata(request));
 
       if (!result) {
@@ -846,10 +888,19 @@ export function createApp({ clientUrl }) {
         return sendError(response, 404, 'Заявку не знайдено. Перевірте номер заявки та email.');
       }
 
+      if (result.sessionToken) {
+        response.cookie(pendingSessionCookieName, result.sessionToken, {
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+          maxAge: sessionDurationMs,
+        });
+      }
+
       return response.json({
         application: result.application,
         requiresLogin: result.requiresLogin,
-        accessPath: result.accessToken ? `/application-access/${result.accessToken}` : '',
+        accessPath: result.sessionToken ? '/application-access/session' : '',
       });
     } catch (error) {
       return sendError(response, 400, error.message);
@@ -857,6 +908,10 @@ export function createApp({ clientUrl }) {
   });
 
   app.post('/api/public/application-access/:token', (request, response) => {
+    if (request.auth?.user) {
+      return sendError(response, 409, 'Ви вже увійшли в систему. Тимчасовий доступ не змішується з особистим кабінетом.');
+    }
+
     const token = String(request.params.token ?? '').trim();
 
     if (!token || token === 'session') {
@@ -887,6 +942,10 @@ export function createApp({ clientUrl }) {
   });
 
   app.get('/api/pending/application', (request, response) => {
+    if (request.auth?.user) {
+      return sendError(response, 403, 'Тимчасовий доступ недоступний під час входу в основний кабінет.');
+    }
+
     if (!request.pendingAccess?.application) {
       return sendError(response, 401, 'Потрібен тимчасовий доступ до заявки.');
     }
@@ -907,6 +966,10 @@ export function createApp({ clientUrl }) {
   });
 
   app.put('/api/pending/application', (request, response) => {
+    if (request.auth?.user) {
+      return sendError(response, 403, 'Тимчасовий доступ недоступний під час входу в основний кабінет.');
+    }
+
     if (!request.pendingAccess?.application) {
       return sendError(response, 401, 'Потрібен тимчасовий доступ до заявки.');
     }
@@ -1146,6 +1209,34 @@ export function createApp({ clientUrl }) {
     (request, response) => {
       response.json({
         application: request.application,
+      });
+    },
+  );
+
+  app.post(
+    '/api/applications/:applicationId/customer-access/reveal',
+    requireAuth,
+    requireStaff,
+    requireApplicationAccess,
+    (request, response) => {
+      if (!request.application.customerUserId) {
+        return sendError(response, 400, 'Особистий кабінет замовника ще не створено.');
+      }
+
+      const credentials = revealCustomerAccessCredentials(request.application.id, request.auth.user);
+
+      if (!credentials) {
+        return sendError(response, 404, 'Заяву не знайдено.');
+      }
+
+      if (!credentials.temporaryPassword) {
+        return sendError(response, 404, 'Тимчасовий пароль недоступний.');
+      }
+
+      return response.json({
+        login: credentials.login,
+        temporaryPassword: credentials.temporaryPassword,
+        notification: credentials.notification,
       });
     },
   );

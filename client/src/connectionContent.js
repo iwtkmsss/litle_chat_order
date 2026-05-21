@@ -24,6 +24,33 @@ export const APPLICATION_STATUS_LABELS = {
   in_progress: 'Прийнято в обробку',
 };
 
+export const APPLICATION_STATUS_LABELS_BY_ROLE = {
+  manager: {
+    submitted: 'Нова заявка',
+    accepted: 'Прийнята в роботу',
+    needs_clarification: 'Очікує доповнення від замовника',
+    under_review: 'На технічному розгляді',
+    technical_conditions_ready: 'Технічні умови підготовлено',
+    agreement_ready: 'Договір підготовлено',
+    completed: 'Завершено',
+    rejected: 'Відхилено / повернуто',
+    draft: 'Чернетка',
+    in_progress: 'Прийнята в роботу',
+  },
+  customer: {
+    submitted: 'Заяву подано',
+    accepted: 'Заяву прийнято в роботу',
+    needs_clarification: 'Потрібно доповнити заяву',
+    under_review: 'Заява на технічному розгляді',
+    technical_conditions_ready: 'Технічні умови підготовлено',
+    agreement_ready: 'Договір підготовлено',
+    completed: 'Послугу завершено',
+    rejected: 'Заяву відхилено або повернуто',
+    draft: 'Чернетка',
+    in_progress: 'Заяву прийнято в роботу',
+  },
+};
+
 export const APPLICATION_STATUS_DESCRIPTIONS = {
   submitted: 'Заяву отримано. Очікує первинної перевірки.',
   accepted: 'Заяву прийнято в роботу.',
@@ -35,6 +62,33 @@ export const APPLICATION_STATUS_DESCRIPTIONS = {
   rejected: 'Заявку повернуто або відмовлено із зазначенням причини.',
   draft: 'Заява збережена як чернетка.',
   in_progress: 'Заяву прийнято в роботу.',
+};
+
+export const APPLICATION_STATUS_DESCRIPTIONS_BY_ROLE = {
+  manager: {
+    submitted: 'Перевірте дані заявки та прийміть її в роботу або поверніть на доповнення.',
+    accepted: 'Заявка перевірена. Можна вести етапи приєднання.',
+    needs_clarification: 'Очікується відповідь або правки від замовника.',
+    under_review: 'Заявка перебуває на технічному розгляді.',
+    technical_conditions_ready: 'Технічні умови підготовлено. Можна переходити до договору.',
+    agreement_ready: 'Договір підготовлено. Очікується завершення процесу.',
+    completed: 'Роботу із заявкою завершено.',
+    rejected: 'Заявку відхилено або закрито з причиною.',
+    draft: 'Чернетка заявки.',
+    in_progress: 'Заявка перевірена. Можна вести етапи приєднання.',
+  },
+  customer: {
+    submitted: 'Заяву отримано. Вона очікує первинної перевірки оператором.',
+    accepted: 'Заяву прийнято в роботу. Оператор виконує необхідні організаційні та технічні заходи.',
+    needs_clarification: 'Потрібно доповнити або уточнити дані за коментарем оператора.',
+    under_review: 'Заява перебуває на технічному розгляді.',
+    technical_conditions_ready: 'Технічні умови підготовлено.',
+    agreement_ready: 'Договір підготовлено.',
+    completed: 'Надання послуги за заявкою завершено.',
+    rejected: 'Заяву відхилено або повернуто. Перегляньте коментар оператора.',
+    draft: 'Заява збережена як чернетка.',
+    in_progress: 'Заяву прийнято в роботу.',
+  },
 };
 
 export const APPLICATION_STATUS_TRANSITIONS = {
@@ -53,7 +107,21 @@ export const APPLICATION_STATUS_TRANSITIONS = {
 export const applicationStatusLabels = APPLICATION_STATUS_LABELS;
 export const applicationStatusDescriptions = APPLICATION_STATUS_DESCRIPTIONS;
 
-export function getApplicationStatusTransitionOptions(status, { isAdmin = false } = {}) {
+export function getApplicationStatusLabel(status, role = 'customer') {
+  const roleKey = role === 'admin' ? 'manager' : role;
+  return APPLICATION_STATUS_LABELS_BY_ROLE[roleKey]?.[status]
+    ?? APPLICATION_STATUS_LABELS[status]
+    ?? status;
+}
+
+export function getApplicationStatusDescription(status, role = 'customer') {
+  const roleKey = role === 'admin' ? 'manager' : role;
+  return APPLICATION_STATUS_DESCRIPTIONS_BY_ROLE[roleKey]?.[status]
+    ?? APPLICATION_STATUS_DESCRIPTIONS[status]
+    ?? 'Поточний статус заявки.';
+}
+
+export function getApplicationStatusTransitionOptions(status, { isAdmin = false, role = 'manager' } = {}) {
   const allowed = APPLICATION_STATUS_TRANSITIONS[status] ?? [];
   const fallback = isAdmin
     ? APPLICATION_STATUSES.filter((item) => item !== status && !['draft', 'in_progress'].includes(item))
@@ -62,7 +130,7 @@ export function getApplicationStatusTransitionOptions(status, { isAdmin = false 
 
   return values.map((value) => ({
     value,
-    label: APPLICATION_STATUS_LABELS[value] ?? value,
+    label: getApplicationStatusLabel(value, role),
   }));
 }
 

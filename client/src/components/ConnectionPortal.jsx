@@ -2,24 +2,13 @@ import { useState } from 'react';
 import { api } from '../api';
 import {
   appendixDocumentDetails,
-  applicationStatusDescriptions,
-  applicationStatusLabels,
   connectionInfoSections,
   documentSamples,
+  getApplicationStatusDescription,
+  getApplicationStatusLabel,
   legalBase,
 } from '../connectionContent';
-
-function getCabinetPath(user) {
-  if (user?.role === 'admin') {
-    return '/admin';
-  }
-
-  if (user?.role === 'manager') {
-    return '/manager';
-  }
-
-  return '/customer';
-}
+import { SiteHeader } from './SiteHeader';
 
 const deadlineHighlights = [
   ['10', 'робочих днів', 'підготовка договору, ТУ та рахунку'],
@@ -28,7 +17,13 @@ const deadlineHighlights = [
   ['1', 'календарний день', 'тимчасове приєднання'],
 ];
 
-export function ConnectionPortal({ activePage = 'connection', onNavigate, pendingAccess, user }) {
+export function ConnectionPortal({
+  activePage = 'connection',
+  onNavigate,
+  onPendingAccessChange,
+  pendingAccess,
+  user,
+}) {
   const [activeModal, setActiveModal] = useState(null);
   const [lookupForm, setLookupForm] = useState({
     applicationNumber: '',
@@ -47,6 +42,14 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate, pendin
     try {
       const response = await api.lookupApplication(lookupForm);
       setLookupResult(response);
+
+      if (response.accessPath && response.application) {
+        onPendingAccessChange?.({
+          applicationId: response.application.id,
+          applicationNumber: response.application.applicationNumber,
+          path: '/application-access/session',
+        });
+      }
     } catch (lookupIssue) {
       setLookupError(lookupIssue.message);
     } finally {
@@ -54,53 +57,32 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate, pendin
     }
   }
 
-  function handleNavigate(item) {
-    onNavigate?.(item.path);
-  }
-
-  const navItems = [
-    { id: 'connection', label: 'Приєднання', path: '/' },
-    { id: 'status', label: 'Перевірити заяву', path: '/status' },
-    { id: 'documents', label: 'Документи', path: '/documents' },
-    user
-      ? { id: 'cabinet', label: 'Особистий кабінет', path: getCabinetPath(user) }
-      : pendingAccess
-        ? { id: 'pending', label: 'Моя заява', path: pendingAccess.path }
-        : { id: 'login', label: 'Вхід', path: '/login' },
-  ];
-
   return (
     <main className="workspace-shell public-shell">
-      <nav className="public-nav" aria-label="Навігація сторінки приєднання">
-        <div>
-          <strong>Приєднання</strong>
-          <span>Електронний сервіс теплових мереж</span>
-        </div>
-
-        <div className="public-nav__links">
-          {navItems.map((item) => (
-            <button
-              className={activePage === item.id ? 'public-nav__link is-active' : 'public-nav__link'}
-              key={item.id}
-              onClick={() => handleNavigate(item)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </nav>
+      <SiteHeader
+        activePath={activePage === 'documents' ? '/documents' : activePage === 'status' ? '/status' : '/'}
+        onNavigate={onNavigate}
+        pendingAccess={pendingAccess}
+        user={user}
+      />
 
       {activePage === 'connection' ? (
         <section className="connection-clean-page">
-          <header className="connection-clean-header surface-card">
+          <header className="connection-clean-header">
             <div>
-              <span className="section-kicker">Електронний сервіс</span>
               <h1>Приєднання до теплових мереж</h1>
               <p>
                 Порядок подання заяви, перелік документів, контроль строків, підстави для відмови
                 та особливості тимчасового приєднання в одному зручному просторі.
               </p>
+              <div className="hero-actions">
+                <button className="primary-button" onClick={() => onNavigate?.('/apply')} type="button">
+                  Подати заяву
+                </button>
+                <button className="secondary-button" onClick={() => onNavigate?.('/status')} type="button">
+                  Перевірити заяву
+                </button>
+              </div>
             </div>
 
             <aside className="connection-deadline-panel" aria-label="Ключові строки">
@@ -116,6 +98,18 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate, pendin
               </div>
             </aside>
           </header>
+
+          <section className="surface-card return-card">
+            <div>
+              <h2>Вже подали заяву?</h2>
+              <p className="muted-copy">
+                Перевірте стан заявки або поверніться до тимчасового кабінету за номером заявки та email.
+              </p>
+            </div>
+            <button className="primary-button" onClick={() => onNavigate?.('/status')} type="button">
+              Перевірити заяву
+            </button>
+          </section>
 
           <section className="connection-info-grid">
             {connectionInfoSections.map((section, index) => (
@@ -163,6 +157,7 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate, pendin
                   onChange={(event) =>
                     setLookupForm((current) => ({ ...current, applicationNumber: event.target.value }))
                   }
+                  placeholder="Наприклад: PR-000123"
                   value={lookupForm.applicationNumber}
                 />
               </label>
@@ -182,7 +177,7 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate, pendin
               </label>
 
               <button className="primary-button" disabled={isLookingUp} type="submit">
-                {isLookingUp ? 'Пошук...' : 'Отримати інформацію'}
+                {isLookingUp ? 'Пошук...' : 'Перевірити заяву'}
               </button>
             </form>
 
@@ -192,18 +187,23 @@ export function ConnectionPortal({ activePage = 'connection', onNavigate, pendin
                 <article className="stage-note">
                   <strong>Заява {lookupResult.application.applicationNumber}</strong>
                   <br />
-                  Статус: {applicationStatusLabels[lookupResult.application.status] ?? lookupResult.application.status}
+                  Статус: {getApplicationStatusLabel(lookupResult.application.status, 'customer')}
                   <br />
-                  {applicationStatusDescriptions[lookupResult.application.status] ?? 'Поточний статус заявки.'}
+                  {getApplicationStatusDescription(lookupResult.application.status, 'customer')}
                 </article>
                 {lookupResult.requiresLogin ? (
-                  <p className="stage-note">
-                    Заявку прийнято. Для перегляду деталей увійдіть в особистий кабінет.
-                  </p>
+                  <>
+                    <p className="stage-note">
+                      Заявку прийнято. Для перегляду деталей увійдіть в особистий кабінет.
+                    </p>
+                    <button className="primary-button" onClick={() => onNavigate?.('/login')} type="button">
+                      Увійти в особистий кабінет
+                    </button>
+                  </>
                 ) : null}
                 {lookupResult.accessPath ? (
-                  <button className="primary-button" onClick={() => onNavigate?.(lookupResult.accessPath)} type="button">
-                    Перейти до заявки
+                  <button className="primary-button" onClick={() => onNavigate?.('/application-access/session')} type="button">
+                    Перейти до моєї заявки
                   </button>
                 ) : null}
               </div>

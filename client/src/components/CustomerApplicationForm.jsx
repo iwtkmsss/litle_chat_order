@@ -7,6 +7,13 @@ import {
 } from '../config/applicationFormConfig';
 import { DynamicApplicationFields } from './forms/DynamicApplicationFields';
 
+const hiddenCustomerQuestionnaireFields = [
+  'customerName',
+  'customerAddress',
+  'customerEmail',
+  'customerPhone',
+];
+
 function createInitialForm(user) {
   return {
     stationId: user.stationId ? String(user.stationId) : '',
@@ -68,13 +75,22 @@ export function CustomerApplicationForm({
   const selectedApplicationType = getApplicationTypeConfig(form.questionnaireType);
 
   function updateField(key, value) {
-    setForm((current) => ({
-      ...current,
-      [key]: value,
-      ...(key === 'phone' && !current.customerPhone ? { customerPhone: value } : {}),
-      ...(key === 'email' && !current.customerEmail ? { customerEmail: value, notificationMethod: value } : {}),
-      ...(key === 'mailingAddress' && !current.customerAddress ? { customerAddress: value } : {}),
-    }));
+    setForm((current) => {
+      const shouldMirrorNotification = !current.notificationMethod || current.notificationMethod === current.email;
+
+      return {
+        ...current,
+        [key]: value,
+        ...(key === 'phone' ? { customerPhone: value } : {}),
+        ...(key === 'email'
+          ? {
+            customerEmail: value,
+            ...(shouldMirrorNotification ? { notificationMethod: value } : {}),
+          }
+          : {}),
+        ...(key === 'mailingAddress' ? { customerAddress: value } : {}),
+      };
+    });
   }
 
   function updateApplicationType(typeId) {
@@ -86,9 +102,9 @@ export function CustomerApplicationForm({
     await onSubmit({
       ...form,
       customerName: form.customerName || user.fullName,
-      customerAddress: form.customerAddress || form.mailingAddress,
-      customerEmail: form.customerEmail || form.email,
-      customerPhone: form.customerPhone || form.phone,
+      customerAddress: form.mailingAddress,
+      customerEmail: form.email,
+      customerPhone: form.phone,
       notificationMethod: form.notificationMethod || form.email,
     });
   }
@@ -203,6 +219,7 @@ export function CustomerApplicationForm({
         <DynamicApplicationFields
           applicationType={selectedApplicationType}
           disabled={disabled}
+          hiddenFields={hiddenCustomerQuestionnaireFields}
           onChange={updateField}
           values={form}
         />

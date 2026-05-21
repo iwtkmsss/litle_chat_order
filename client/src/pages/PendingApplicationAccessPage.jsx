@@ -5,10 +5,11 @@ import {
   PublicApplicationForm,
   createPublicApplicationInitialValues,
 } from '../components/PublicApplicationForm';
+import { SiteHeader } from '../components/SiteHeader';
 import {
-  applicationStatusDescriptions,
-  applicationStatusLabels,
   connectionTypeLabels,
+  getApplicationStatusDescription,
+  getApplicationStatusLabel,
 } from '../connectionContent';
 import { getApplicationTypeConfig } from '../config/applicationFormConfig';
 import { formatDate } from '../utils';
@@ -49,6 +50,11 @@ export function PendingApplicationAccessPage({
     let active = true;
 
     async function load() {
+      if (user) {
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       setError('');
 
@@ -88,7 +94,7 @@ export function PendingApplicationAccessPage({
     return () => {
       active = false;
     };
-  }, [onPendingAccessChange, token]);
+  }, [onPendingAccessChange, token, user]);
 
   const latestClarification = useMemo(() => getLatestClarification(application), [application]);
   const applicationType = getApplicationTypeConfig(application?.appendixData?.questionnaire?.type);
@@ -121,6 +127,23 @@ export function PendingApplicationAccessPage({
     );
   }
 
+  if (user) {
+    return (
+      <main className="workspace-shell">
+        <section className="surface-card splash-card">
+          <h1>Ви вже увійшли в систему</h1>
+          <p className="muted-copy">
+            Тимчасовий доступ не змішується з особистим кабінетом. Відкрийте свій кабінет
+            або вийдіть із системи, щоб переглянути тимчасову заявку.
+          </p>
+          <button className="primary-button" onClick={() => onNavigate(getCabinetPath(user))} type="button">
+            Особистий кабінет
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   if (error || !application) {
     return (
       <main className="workspace-shell">
@@ -142,22 +165,18 @@ export function PendingApplicationAccessPage({
     );
   }
 
-  if (user) {
-    return (
-      <main className="workspace-shell">
-        <section className="surface-card splash-card">
-          <h1>Ви вже увійшли в систему</h1>
-          <p className="muted-copy">Для роботи із заявками відкрийте свій основний кабінет.</p>
-          <button className="primary-button" onClick={() => onNavigate(getCabinetPath(user))} type="button">
-            Особистий кабінет
-          </button>
-        </section>
-      </main>
-    );
-  }
-
   return (
     <main className="workspace-shell">
+      <SiteHeader
+        activePath="/application-access/session"
+        onNavigate={onNavigate}
+        pendingAccess={{
+          applicationId: application.id,
+          applicationNumber: application.applicationNumber,
+          path: '/application-access/session',
+        }}
+        user={user}
+      />
       <header className="workspace-header">
         <div>
           <span className="section-kicker">Тимчасовий кабінет заявки</span>
@@ -183,9 +202,9 @@ export function PendingApplicationAccessPage({
         <div className="section-header">
           <div>
             <span className="section-kicker">Поточний стан</span>
-            <h2>{applicationStatusLabels[application.status] ?? application.status}</h2>
+            <h2>{getApplicationStatusLabel(application.status, 'customer')}</h2>
             <p className="muted-copy">
-              {applicationStatusDescriptions[application.status] ?? 'Поточний статус заявки.'}
+              {getApplicationStatusDescription(application.status, 'customer')}
             </p>
           </div>
           <span className="counter-chip">{formatDate(application.receivedAt)}</span>

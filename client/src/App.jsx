@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from './api';
 import { AccountPage } from './pages/AccountPage';
 import { AdminPage } from './pages/AdminPage';
+import { ApplyPage } from './pages/ApplyPage';
 import { CustomerPage } from './pages/CustomerPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { ManagerPage } from './pages/ManagerPage';
@@ -12,6 +13,7 @@ import { StatusPage } from './pages/StatusPage';
 
 const routes = new Map([
   ['/', { type: 'public', page: 'connection' }],
+  ['/apply', { type: 'public', page: 'apply' }],
   ['/status', { type: 'public', page: 'status' }],
   ['/documents', { type: 'public', page: 'documents' }],
   ['/login', { type: 'auth' }],
@@ -226,22 +228,43 @@ export default function App() {
     return (
       <AccountPage
         isLoggingIn={isLoggingIn}
-        isRegistering={isRegistering}
         loginError={loginError}
         onLogin={handleLogin}
-        onRegister={handleRegister}
-        registrationError={registrationError}
+        onNavigate={navigate}
+        pendingAccess={pendingAccess}
+        user={user}
       />
     );
   }
 
   if (route.type === 'public') {
     if (route.page === 'status') {
-      return <StatusPage onNavigate={navigate} pendingAccess={pendingAccess} user={user} />;
+      return (
+        <StatusPage
+          onNavigate={navigate}
+          onPendingAccessChange={setPendingAccess}
+          pendingAccess={pendingAccess}
+          user={user}
+        />
+      );
     }
 
     if (route.page === 'documents') {
       return <DocumentsPage onNavigate={navigate} pendingAccess={pendingAccess} user={user} />;
+    }
+
+    if (route.page === 'apply') {
+      return (
+        <ApplyPage
+          isRegistering={isRegistering}
+          onNavigate={navigate}
+          onPendingAccessChange={setPendingAccess}
+          onRegister={handleRegister}
+          pendingAccess={pendingAccess}
+          registrationError={registrationError}
+          user={user}
+        />
+      );
     }
 
     return <PublicConnectionPage onNavigate={navigate} pendingAccess={pendingAccess} user={user} />;

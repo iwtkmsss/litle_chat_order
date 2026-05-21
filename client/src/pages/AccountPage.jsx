@@ -2,20 +2,20 @@ import { LoginScreen } from '../components/LoginScreen';
 
 export function AccountPage({
   loginError,
-  registrationError,
   isLoggingIn,
-  isRegistering,
   onLogin,
-  onRegister,
+  onNavigate,
+  pendingAccess,
+  user,
 }) {
   return (
     <LoginScreen
       error={loginError}
-      isRegistering={isRegistering}
       isSubmitting={isLoggingIn}
-      onRegister={onRegister}
+      onNavigate={onNavigate}
+      pendingAccess={pendingAccess}
       onSubmit={onLogin}
-      registrationError={registrationError}
+      user={user}
     />
   );
 }

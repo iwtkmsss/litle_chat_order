@@ -1,8 +1,8 @@
 import {
-  applicationStatusDescriptions,
-  applicationStatusLabels,
   connectionTypeLabels,
   deadlineStatusLabels,
+  getApplicationStatusDescription,
+  getApplicationStatusLabel,
   stageStatusLabels,
 } from '../connectionContent';
 import { apiUrl } from '../api';
@@ -26,12 +26,12 @@ export function ApplicationProgress({ application, compact = false }) {
           <h2>{application.applicantFullName}</h2>
           <p className="muted-copy">{application.objectAddress}</p>
           <p className="muted-copy">
-            {applicationStatusDescriptions[application.status] ?? 'Поточний статус заявки.'}
+            {getApplicationStatusDescription(application.status, 'customer')}
           </p>
         </div>
 
         <div className="summary-pill-group">
-          <span className="summary-pill">{applicationStatusLabels[application.status] ?? application.status}</span>
+          <span className="summary-pill">{getApplicationStatusLabel(application.status, 'customer')}</span>
           <span className="summary-pill">{connectionTypeLabels[application.connectionType]}</span>
           <span className="summary-pill">
             {application.stageSummary.completed}/{application.stageSummary.total} етапів
@@ -54,9 +54,9 @@ export function ApplicationProgress({ application, compact = false }) {
             {visibleStatusHistory.map((entry) => (
               <article className="email-log-item" key={entry.id}>
                 <strong>
-                  {applicationStatusLabels[entry.fromStatus] ?? entry.fromStatus ?? 'Створено'}
+                  {entry.fromStatus ? getApplicationStatusLabel(entry.fromStatus, 'customer') : 'Створено'}
                   {' → '}
-                  {applicationStatusLabels[entry.toStatus] ?? entry.toStatus}
+                  {getApplicationStatusLabel(entry.toStatus, 'customer')}
                 </strong>
                 {entry.comment ? <span>{entry.comment}</span> : null}
                 <small>{formatDateTime(entry.createdAt)}</small>

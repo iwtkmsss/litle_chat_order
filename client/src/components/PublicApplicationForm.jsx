@@ -16,6 +16,19 @@ const stepTitles = [
   'Перевірка',
 ];
 
+const hiddenQuestionnaireFields = [
+  'customerName',
+  'customerAddress',
+  'customerDistrict',
+  'customerEmail',
+  'customerPhone',
+  'objectName',
+  'objectAddress',
+  'plannedWorks',
+  'constructionStartYear',
+  'commissioningYear',
+];
+
 export function createPublicApplicationInitialValues(application = null) {
   const questionnaire = application?.appendixData?.questionnaire ?? {};
   const appendix3 = application?.appendixData?.appendix3 ?? {};
@@ -27,8 +40,12 @@ export function createPublicApplicationInitialValues(application = null) {
     phone: application?.phone ?? questionnaire.customerPhone ?? '',
     email: application?.email ?? questionnaire.customerEmail ?? '',
     mailingAddress: appendix3.mailingAddress ?? questionnaire.customerAddress ?? '',
+    customerDistrict: questionnaire.customerDistrict ?? '',
     objectName: appendix3.objectName ?? questionnaire.objectName ?? '',
     objectAddress: application?.objectAddress ?? questionnaire.objectAddress ?? '',
+    plannedWorks: questionnaire.plannedWorks ?? '',
+    constructionStartYear: questionnaire.constructionStartYear ?? '',
+    commissioningYear: questionnaire.commissioningYear ?? '',
     connectionReason: appendix3.connectionReason ?? '',
     connectionType: application?.connectionType ?? 'standard',
     questionnaireType,
@@ -91,16 +108,25 @@ export function PublicApplicationForm({
   );
 
   function updateField(key, value) {
-    setForm((current) => ({
-      ...current,
-      [key]: value,
-      ...(key === 'fullName' && !current.customerName ? { customerName: value } : {}),
-      ...(key === 'phone' && !current.customerPhone ? { customerPhone: value } : {}),
-      ...(key === 'email' && !current.customerEmail ? { customerEmail: value, notificationMethod: value } : {}),
-      ...(key === 'mailingAddress' && !current.customerAddress ? { customerAddress: value } : {}),
-      ...(key === 'objectName' && !current.objectName ? { objectName: value } : {}),
-      ...(key === 'objectAddress' && !current.objectAddress ? { objectAddress: value } : {}),
-    }));
+    setForm((current) => {
+      const shouldMirrorNotification = !current.notificationMethod || current.notificationMethod === current.email;
+
+      return {
+        ...current,
+        [key]: value,
+        ...(key === 'fullName' ? { customerName: value } : {}),
+        ...(key === 'phone' ? { customerPhone: value } : {}),
+        ...(key === 'email'
+          ? {
+            customerEmail: value,
+            ...(shouldMirrorNotification ? { notificationMethod: value } : {}),
+          }
+          : {}),
+        ...(key === 'mailingAddress' ? { customerAddress: value } : {}),
+        ...(key === 'objectName' ? { objectName: value } : {}),
+        ...(key === 'objectAddress' ? { objectAddress: value } : {}),
+      };
+    });
   }
 
   function updateApplicationType(typeId) {
@@ -117,11 +143,16 @@ export function PublicApplicationForm({
 
     await onSubmit({
       ...form,
-      customerName: form.customerName || form.fullName,
-      customerAddress: form.customerAddress || form.mailingAddress,
-      customerEmail: form.customerEmail || form.email,
-      customerPhone: form.customerPhone || form.phone,
+      customerName: form.fullName,
+      customerAddress: form.mailingAddress,
+      customerDistrict: form.customerDistrict,
+      customerEmail: form.email,
+      customerPhone: form.phone,
       objectName: form.objectName || form.objectAddress,
+      objectAddress: form.objectAddress,
+      plannedWorks: form.plannedWorks,
+      constructionStartYear: form.constructionStartYear,
+      commissioningYear: form.commissioningYear,
       notificationMethod: form.notificationMethod || form.email,
     });
   }
@@ -157,6 +188,10 @@ export function PublicApplicationForm({
             <span>Адреса для листування</span>
             <input className="field-input" disabled={disabled} onChange={(event) => updateField('mailingAddress', event.target.value)} required value={form.mailingAddress} />
           </label>
+          <label className="field-block field-block--wide">
+            <span>Адміністративний район <small className="field-unit">за наявності</small></span>
+            <input className="field-input" disabled={disabled} onChange={(event) => updateField('customerDistrict', event.target.value)} value={form.customerDistrict} />
+          </label>
         </section>
       ) : null}
 
@@ -179,6 +214,23 @@ export function PublicApplicationForm({
           <label className="field-block field-block--wide">
             <span>Адреса об’єкта</span>
             <input className="field-input" disabled={disabled} onChange={(event) => updateField('objectAddress', event.target.value)} required value={form.objectAddress} />
+          </label>
+          <label className="field-block">
+            <span>Будівництво або реконструкція <small className="field-unit">якщо відомо</small></span>
+            <select className="field-input" disabled={disabled} onChange={(event) => updateField('plannedWorks', event.target.value)} value={form.plannedWorks}>
+              <option value="">Не вказано</option>
+              <option value="Будівництво">Будівництво</option>
+              <option value="Реконструкція">Реконструкція</option>
+              <option value="Будівництво та реконструкція">Будівництво та реконструкція</option>
+            </select>
+          </label>
+          <label className="field-block">
+            <span>Рік початку робіт <small className="field-unit">якщо відомо</small></span>
+            <input className="field-input" disabled={disabled} onChange={(event) => updateField('constructionStartYear', event.target.value)} placeholder="Наприклад: 2026" type="number" value={form.constructionStartYear} />
+          </label>
+          <label className="field-block">
+            <span>Рік введення в експлуатацію <small className="field-unit">якщо відомо</small></span>
+            <input className="field-input" disabled={disabled} onChange={(event) => updateField('commissioningYear', event.target.value)} placeholder="Наприклад: 2027" type="number" value={form.commissioningYear} />
           </label>
         </section>
       ) : null}
@@ -221,7 +273,13 @@ export function PublicApplicationForm({
               </p>
             </div>
           </div>
-          <DynamicApplicationFields applicationType={selectedApplicationType} disabled={disabled} onChange={updateField} values={form} />
+          <DynamicApplicationFields
+            applicationType={selectedApplicationType}
+            disabled={disabled}
+            hiddenFields={hiddenQuestionnaireFields}
+            onChange={updateField}
+            values={form}
+          />
         </section>
       ) : null}
 

@@ -1704,6 +1704,26 @@ const listEmailNotificationsStatement = db.prepare(`
   ORDER BY created_at DESC, id DESC
 `);
 
+const latestCustomerAccessNotificationStatement = db.prepare(`
+  SELECT
+    id,
+    application_id AS applicationId,
+    stage_id AS stageId,
+    recipient_email AS recipientEmail,
+    recipient_name AS recipientName,
+    subject,
+    body,
+    notification_type AS notificationType,
+    payload,
+    status,
+    created_at AS createdAt
+  FROM email_notifications
+  WHERE application_id = ?
+    AND notification_type = 'customer_access_prepared'
+  ORDER BY created_at DESC, id DESC
+  LIMIT 1
+`);
+
 const insertPendingAccessTokenStatement = db.prepare(`
   INSERT INTO pending_application_access_tokens (
     application_id,
@@ -1786,7 +1806,7 @@ const deletePendingSessionsForApplicationStatement = db.prepare(`
 const publicApplicationLookupByEmailStatement = db.prepare(`
   SELECT id
   FROM applications
-  WHERE application_number = ?
+  WHERE upper(application_number) = upper(?)
     AND lower(email) = lower(?)
   ORDER BY updated_at DESC, id DESC
   LIMIT 1
@@ -1801,6 +1821,18 @@ const publicApplicationLookupStatement = db.prepare(`
       OR application_number = ?
     )
   ORDER BY updated_at DESC, id DESC
+  LIMIT 1
+`);
+
+const nextApplicationNumberSeedStatement = db.prepare(`
+  SELECT COALESCE(MAX(id), 0) + 1 AS nextNumber
+  FROM applications
+`);
+
+const applicationNumberExistsStatement = db.prepare(`
+  SELECT 1
+  FROM applications
+  WHERE application_number = ?
   LIMIT 1
 `);
 
@@ -2069,7 +2101,16 @@ function getChatSummary(chatId) {
   })))[0];
 }
 
-function mapEmailNotification(row) {
+function mapEmailNotification(row, { redactSensitive = true } = {}) {
+  const payload = parseJsonObject(row.payload);
+  let body = row.body;
+
+  if (redactSensitive && Object.prototype.hasOwnProperty.call(payload, 'temporaryPassword')) {
+    body = String(body ?? '').replace(/Тимчасовий пароль:\s*.+/g, 'Тимчасовий пароль: приховано');
+    payload.temporaryPassword = undefined;
+    payload.hasTemporaryPassword = true;
+  }
+
   return {
     id: row.id,
     applicationId: row.applicationId,
@@ -2077,9 +2118,9 @@ function mapEmailNotification(row) {
     recipientEmail: row.recipientEmail,
     recipientName: row.recipientName,
     subject: row.subject,
-    body: row.body,
+    body,
     notificationType: row.notificationType,
-    payload: parseJsonObject(row.payload),
+    payload,
     status: row.status,
     createdAt: row.createdAt,
   };
@@ -2250,11 +2291,17 @@ function mapApplication(row, {
 }
 
 function generateApplicationNumber() {
-  const now = new Date();
-  const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const timePart = now.toISOString().slice(11, 19).replace(/:/g, '');
-  const millisecondPart = String(now.getUTCMilliseconds()).padStart(3, '0');
-  return `PR-${datePart}-${timePart}${millisecondPart}`;
+  const seed = Number(nextApplicationNumberSeedStatement.get()?.nextNumber ?? 1);
+
+  for (let offset = 0; offset < 1000; offset += 1) {
+    const candidate = `PR-${String(seed + offset).padStart(6, '0')}`;
+
+    if (!applicationNumberExistsStatement.get(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `PR-${Date.now().toString(36).toUpperCase()}`;
 }
 
 function createPendingRawToken() {
@@ -3313,6 +3360,56 @@ export function updateApplication(applicationId, input, actor) {
   return updatedId ? getApplicationById(updatedId) : null;
 }
 
+export function revealCustomerAccessCredentials(applicationId, actor) {
+  const application = getApplicationByIdStatement.get(applicationId);
+
+  if (!application) {
+    return null;
+  }
+
+  const notification = latestCustomerAccessNotificationStatement.get(applicationId);
+
+  if (!notification) {
+    return {
+      login: application.email,
+      temporaryPassword: '',
+      notification: null,
+    };
+  }
+
+  const mappedNotification = mapEmailNotification(notification, { redactSensitive: false });
+  const temporaryPassword = String(mappedNotification.payload?.temporaryPassword ?? '');
+  const login = String(mappedNotification.payload?.login ?? application.email ?? '');
+
+  recordAuditLog({
+    actor,
+    stationId: application.stationId,
+    entityType: 'application',
+    entityId: application.id,
+    action: 'customer_access_password_viewed',
+    summary: `Переглянуто тимчасовий пароль доступу за заявою ${application.applicationNumber}.`,
+    after: {
+      applicationId: application.id,
+      applicationNumber: application.applicationNumber,
+      notificationId: notification.id,
+      login,
+      hasTemporaryPassword: Boolean(temporaryPassword),
+    },
+  });
+
+  return {
+    login,
+    temporaryPassword,
+    notification: {
+      id: mappedNotification.id,
+      status: mappedNotification.status,
+      createdAt: mappedNotification.createdAt,
+      recipientEmail: mappedNotification.recipientEmail,
+      hasTemporaryPassword: Boolean(temporaryPassword),
+    },
+  };
+}
+
 const resubmitPendingApplicationTransaction = db.transaction((applicationId, input) => {
   const current = getApplicationByIdStatement.get(applicationId);
 
@@ -3691,6 +3788,17 @@ export function lookupPublicApplication({ email, applicationNumber }, metadata =
     metadata.ip ?? '',
     metadata.userAgent ?? '',
   );
+  const accessTokenId = Number(tokenResult.lastInsertRowid);
+  const sessionToken = createSessionToken();
+
+  insertPendingSessionStatement.run(
+    sessionToken,
+    application.id,
+    accessTokenId,
+    timestamp,
+    expiresAt,
+    timestamp,
+  );
 
   recordAuditLog({
     actor: { role: 'guest', fullName: 'Публічна перевірка' },
@@ -3701,15 +3809,25 @@ export function lookupPublicApplication({ email, applicationNumber }, metadata =
     summary: `Публічна перевірка заяви ${application.applicationNumber}: підготовлено нове посилання тимчасового доступу.`,
     after: {
       applicationNumber: application.applicationNumber,
-      accessTokenId: Number(tokenResult.lastInsertRowid),
+      accessTokenId,
       emailMatched: true,
     },
+  });
+
+  recordAuditLog({
+    actor: { role: 'guest', fullName: 'Публічна перевірка' },
+    stationId: application.stationId,
+    entityType: 'pending_application_session',
+    entityId: application.id,
+    action: 'create',
+    summary: `Створено pending-сесію через публічну перевірку заяви ${application.applicationNumber}.`,
+    after: { applicationId: application.id, applicationNumber: application.applicationNumber },
   });
 
   return {
     application: publicApplication,
     requiresLogin: false,
-    accessToken: rawToken,
+    sessionToken,
   };
 }
 

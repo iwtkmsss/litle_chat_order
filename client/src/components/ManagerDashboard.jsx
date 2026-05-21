@@ -462,8 +462,8 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
     }
   }
 
-  async function handleSaveStatus() {
-    if (!selectedApplication || statusDraft.status === selectedApplication.status) {
+  async function handleSaveStatus(nextDraft = statusDraft) {
+    if (!selectedApplication || nextDraft.status === selectedApplication.status) {
       return;
     }
 
@@ -479,8 +479,8 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
         email: selectedApplication.email ?? '',
         objectAddress: selectedApplication.objectAddress,
         connectionType: selectedApplication.connectionType,
-        status: statusDraft.status,
-        statusComment: statusDraft.comment,
+        status: nextDraft.status,
+        statusComment: nextDraft.comment,
         receivedAt: selectedApplication.receivedAt,
         responsibleName: selectedApplication.responsibleName ?? '',
         notes: selectedApplication.notes ?? '',
@@ -706,7 +706,10 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
         <section className="application-detail-grid">
           <ApplicationDetail
             appendix3Fields={appendix3Fields}
-            availableStatusOptions={getApplicationStatusTransitionOptions(selectedApplication.status, { isAdmin })}
+            availableStatusOptions={getApplicationStatusTransitionOptions(selectedApplication.status, {
+              isAdmin,
+              role: 'manager',
+            })}
             deadlineDataDraft={deadlineDataDraft}
             disabledDeadlineData={savingDeadlineData}
             disabledStatus={savingStatus}
@@ -714,6 +717,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
             getQuestionnaireTypeDetails={getQuestionnaireTypeDetails}
             onSaveDeadlineData={handleSaveDeadlineData}
             onSaveStatus={handleSaveStatus}
+            isAdmin={isAdmin}
             selectedApplication={selectedApplication}
             setDeadlineDataDraft={setDeadlineDataDraft}
             setStatusDraft={setStatusDraft}

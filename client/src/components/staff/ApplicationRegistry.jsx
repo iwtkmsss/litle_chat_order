@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
-  applicationStatusDescriptions,
-  applicationStatusLabels,
+  getApplicationStatusDescription,
+  getApplicationStatusLabel,
 } from '../../connectionContent';
 import { formatDate } from '../../utils';
 
@@ -89,6 +89,33 @@ function isOverdueApplication(application) {
 
 function isDueSoonApplication(application) {
   return hasDeadlineStatus(application, 'due_soon');
+}
+
+function getAccessBadge(application) {
+  if (application.customerUserId) {
+    return { label: 'Кабінет створено', tone: 'done' };
+  }
+
+  if (application.status === 'needs_clarification') {
+    return { label: 'Очікує доповнення', tone: 'due_soon' };
+  }
+
+  if (application.status === 'rejected') {
+    return { label: 'Кабінет не створено', tone: 'overdue' };
+  }
+
+  if (application.status === 'submitted') {
+    return { label: 'Тимчасовий доступ', tone: 'normal' };
+  }
+
+  return { label: 'Кабінет не створено', tone: 'normal' };
+}
+
+function isResubmittedApplication(application) {
+  return application.status === 'submitted'
+    && application.statusHistory?.some(
+      (entry) => entry.fromStatus === 'needs_clarification' && entry.toStatus === 'submitted',
+    );
 }
 
 function getObjectName(application) {
@@ -338,8 +365,10 @@ export function ApplicationRegistry({
             const isOverdue = isOverdueApplication(application);
             const isDueSoon = isDueSoonApplication(application);
             const objectName = getObjectName(application);
-            const statusLabel = applicationStatusLabels[application.status] ?? application.status;
-            const statusDescription = applicationStatusDescriptions[application.status] ?? 'Поточний статус заявки.';
+            const statusLabel = getApplicationStatusLabel(application.status, 'manager');
+            const statusDescription = getApplicationStatusDescription(application.status, 'manager');
+            const accessBadge = getAccessBadge(application);
+            const isResubmitted = isResubmittedApplication(application);
 
             return (
               <article
@@ -356,6 +385,12 @@ export function ApplicationRegistry({
                     <span className={`summary-pill application-status-pill application-status-pill--${application.status}`}>
                       {statusLabel}
                     </span>
+                    <span className={`summary-pill deadline-pill deadline-pill--${accessBadge.tone}`}>
+                      {accessBadge.label}
+                    </span>
+                    {isResubmitted ? (
+                      <span className="summary-pill deadline-pill deadline-pill--due_soon">Повторно подана</span>
+                    ) : null}
                     {isOverdue ? (
                       <span className="summary-pill deadline-pill deadline-pill--overdue">Прострочено</span>
                     ) : null}

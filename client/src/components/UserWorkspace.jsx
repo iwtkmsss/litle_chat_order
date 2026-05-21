@@ -1,13 +1,14 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import {
-  applicationStatusDescriptions,
-  applicationStatusLabels,
   connectionTypeLabels,
+  getApplicationStatusDescription,
+  getApplicationStatusLabel,
 } from '../connectionContent';
 import { getApplicationTypeConfig } from '../config/applicationFormConfig';
 import { formatDate } from '../utils';
 import { ApplicationProgress } from './ApplicationProgress';
+import { AppLogo } from './AppLogo';
 import { ChatRoom } from './ChatRoom';
 import { CustomerApplicationForm } from './CustomerApplicationForm';
 
@@ -135,6 +136,7 @@ export function UserWorkspace({ user, onLogout }) {
     <main className="workspace-shell">
       <header className="workspace-header">
         <div>
+          <AppLogo compact />
           <span className="section-kicker">Особистий кабінет замовника</span>
           <h1>Мої заяви</h1>
           <p className="muted-copy">{user.fullName}</p>
@@ -190,8 +192,8 @@ export function UserWorkspace({ user, onLogout }) {
         <div className="tab-strip">
           {sortedApplications.map((application) => {
             const isActive = application.id === selectedApplicationId;
-            const statusLabel = applicationStatusLabels[application.status] ?? application.status;
-            const statusDescription = applicationStatusDescriptions[application.status] ?? 'Поточний статус заявки.';
+            const statusLabel = getApplicationStatusLabel(application.status, 'customer');
+            const statusDescription = getApplicationStatusDescription(application.status, 'customer');
             const typeLabel = getApplicationTypeLabel(application);
 
             return (
@@ -207,13 +209,13 @@ export function UserWorkspace({ user, onLogout }) {
                   {statusLabel}
                 </span>
                 {application.status === 'needs_clarification' ? (
-                  <span className="summary-pill deadline-pill deadline-pill--due_soon">Потребує уточнення</span>
+                  <span className="summary-pill deadline-pill deadline-pill--due_soon">Потрібно доповнити заяву</span>
                 ) : null}
                 {application.status === 'completed' ? (
-                  <span className="summary-pill deadline-pill deadline-pill--done">Завершено</span>
+                  <span className="summary-pill deadline-pill deadline-pill--done">Послугу завершено</span>
                 ) : null}
                 {application.status === 'rejected' ? (
-                  <span className="summary-pill deadline-pill deadline-pill--overdue">Відмовлено / повернуто</span>
+                  <span className="summary-pill deadline-pill deadline-pill--overdue">Відхилено або повернуто</span>
                 ) : null}
               </div>
               <span>{getObjectName(application)}</span>
@@ -253,7 +255,7 @@ export function UserWorkspace({ user, onLogout }) {
                 </p>
               </div>
               <span className="counter-chip">
-                {applicationStatusLabels[selectedApplication.status] ?? selectedApplication.status}
+                {getApplicationStatusLabel(selectedApplication.status, 'customer')}
               </span>
             </div>
 
@@ -261,7 +263,7 @@ export function UserWorkspace({ user, onLogout }) {
               <span>Дата подання: {formatDate(selectedApplication.receivedAt)}</span>
               <span>Станція: {selectedApplication.stationName}</span>
               <span>Адреса об’єкта: {selectedApplication.objectAddress}</span>
-              <span>{applicationStatusDescriptions[selectedApplication.status] ?? 'Поточний статус заявки.'}</span>
+              <span>{getApplicationStatusDescription(selectedApplication.status, 'customer')}</span>
             </div>
           </section>
 

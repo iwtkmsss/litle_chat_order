@@ -1,29 +1,40 @@
 export function DynamicApplicationFields({
   applicationType,
   disabled = false,
+  hiddenFields = [],
   onChange,
   values,
 }) {
+  const hiddenFieldSet = new Set(hiddenFields);
+
   return (
     <>
-      {applicationType.groups.map((group) => (
-        <div className="appendix-form-section field-block--wide" key={group.id}>
-          <div>
-            <span className="section-kicker">{applicationType.appendix}</span>
-            <h3>{group.title}</h3>
-          </div>
+      {applicationType.groups.map((group) => {
+        const fields = group.fields.filter((field) => !hiddenFieldSet.has(field.name));
 
-          {group.fields.map((field) => (
-            <DynamicField
-              disabled={disabled}
-              field={field}
-              key={field.name}
-              onChange={onChange}
-              value={values?.[field.name] ?? ''}
-            />
-          ))}
-        </div>
-      ))}
+        if (fields.length === 0) {
+          return null;
+        }
+
+        return (
+          <div className="appendix-form-section field-block--wide" key={group.id}>
+            <div>
+              <span className="section-kicker">{applicationType.appendix}</span>
+              <h3>{group.title}</h3>
+            </div>
+
+            {fields.map((field) => (
+              <DynamicField
+                disabled={disabled}
+                field={field}
+                key={field.name}
+                onChange={onChange}
+                value={values?.[field.name] ?? ''}
+              />
+            ))}
+          </div>
+        );
+      })}
     </>
   );
 }

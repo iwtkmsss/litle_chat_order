@@ -1,3 +1,5 @@
+import { AppLogo } from '../AppLogo';
+
 export function StaffLayout({
   activeDashboardPage,
   children,
@@ -17,8 +19,13 @@ export function StaffLayout({
     <main className="workspace-shell">
       <header className="workspace-header">
         <div>
-          <span className="section-kicker">{isAdmin ? 'Адмін-панель' : user.stationName || 'Менеджер станції'}</span>
-          <h1>{isAdmin ? 'Адміністрування сервісу' : 'Реєстр заявників'}</h1>
+          <AppLogo compact />
+          <div className="workspace-title-row">
+            <h1>{isAdmin ? 'Адміністрування сервісу' : 'Реєстр заявників'}</h1>
+            <span className="workspace-badge">
+              {isAdmin ? 'Адмін-панель' : `Станція: ${user.stationName || 'не прив’язано'}`}
+            </span>
+          </div>
           <p className="muted-copy">
             Приєднання до теплових мереж, станції/компанії, етапи, документи, строки та журнал дій.
           </p>
@@ -73,8 +80,8 @@ export function StaffLayout({
       {!isAdmin ? (
         <section className="surface-card manager-card manager-context-card">
           <div>
-            <span className="section-kicker">Станція/компанія менеджера</span>
-            <h2>{user.stationName || 'Не прив’язано'}</h2>
+            <strong>Станція/компанія менеджера</strong>
+            <span>{user.stationName || 'Не прив’язано'}</span>
           </div>
           <p className="muted-copy">
             Нові замовники та заявки автоматично належать до цієї станції/компанії.
