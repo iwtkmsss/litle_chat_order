@@ -409,6 +409,7 @@ export function ApplicationRegistry({
                   <span>{application.objectAddress}</span>
                   <div className="application-card__meta">
                     <span>Станція: {application.stationName}</span>
+                    {application.objectRegion ? <span>Область: {application.objectRegion}</span> : null}
                     <span>Подано: {formatDate(application.receivedAt || application.createdAt)}</span>
                     <span>
                       Етапи: {application.stageSummary.completed}/{application.stageSummary.total}

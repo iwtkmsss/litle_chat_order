@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api';
 import { PublicApplicationForm } from '../components/PublicApplicationForm';
 import { SiteHeader } from '../components/SiteHeader';
+import { ToastMessage } from '../components/ToastMessage';
 
 export function ApplyPage({
   isRegistering,
@@ -13,40 +13,17 @@ export function ApplyPage({
   user,
 }) {
   const [pendingResult, setPendingResult] = useState(null);
-  const [stations, setStations] = useState([]);
-  const [stationsError, setStationsError] = useState('');
-  const [isLoadingStations, setIsLoadingStations] = useState(false);
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
-    let active = true;
-
-    async function loadStations() {
-      setIsLoadingStations(true);
-      setStationsError('');
-
-      try {
-        const response = await api.listPublicStations();
-
-        if (active) {
-          setStations(response.stations);
-        }
-      } catch (error) {
-        if (active) {
-          setStationsError(error.message);
-        }
-      } finally {
-        if (active) {
-          setIsLoadingStations(false);
-        }
-      }
+    if (registrationError) {
+      setToast({
+        id: Date.now(),
+        message: registrationError,
+        tone: 'error',
+      });
     }
-
-    loadStations();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  }, [registrationError]);
 
   async function handleSubmit(input) {
     const result = await onRegister(input);
@@ -56,6 +33,11 @@ export function ApplyPage({
     }
 
     setPendingResult(result);
+    setToast({
+      id: Date.now(),
+      message: 'Заяву подано. Тимчасовий кабінет створено.',
+      tone: 'success',
+    });
     onPendingAccessChange?.(result.pendingAccess ?? {
       applicationId: result.application.id,
       applicationNumber: result.application.applicationNumber,
@@ -65,6 +47,12 @@ export function ApplyPage({
 
   return (
     <main className="workspace-shell public-shell">
+      <ToastMessage
+        key={toast?.id}
+        message={toast?.message}
+        onClose={() => setToast(null)}
+        tone={toast?.tone}
+      />
       <SiteHeader
         activePath="/apply"
         onNavigate={onNavigate}
@@ -93,6 +81,9 @@ export function ApplyPage({
                 <em>{pendingResult.application.applicationNumber}</em>
               </span>
               <span><strong>Статус</strong>Заяву подано</span>
+              {pendingResult.application.objectRegion ? (
+                <span><strong>Область</strong>{pendingResult.application.objectRegion}</span>
+              ) : null}
             </div>
             <p className="muted-copy">
               Збережіть цей номер. Він потрібен для перевірки стану заявки. Після прийняття заявки
@@ -113,12 +104,10 @@ export function ApplyPage({
           </section>
         ) : (
           <section className="surface-card apply-form-card">
-            {stationsError ? <p className="form-error field-block--wide">{stationsError}</p> : null}
             {registrationError ? <p className="form-error field-block--wide">{registrationError}</p> : null}
             <PublicApplicationForm
-              disabled={isRegistering || isLoadingStations}
+              disabled={isRegistering}
               onSubmit={handleSubmit}
-              stations={stations}
               submitLabel="Надіслати заяву"
             />
           </section>

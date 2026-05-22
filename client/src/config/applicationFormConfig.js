@@ -9,6 +9,7 @@ export const LEGACY_QUESTIONNAIRE_TYPES = {
 };
 
 const responseMethodOptions = [
+  { value: '', label: 'Оберіть спосіб отримання відповіді' },
   { value: 'За місцем подання заяви', label: 'За місцем подання заяви' },
   { value: 'Електронною поштою', label: 'Електронною поштою' },
   { value: 'Поштою', label: 'Поштою' },
@@ -17,6 +18,7 @@ const responseMethodOptions = [
 const yesNoOptions = [
   { value: 'Так', label: 'Так' },
   { value: 'Ні', label: 'Ні' },
+  { value: 'Не знаю', label: 'Не знаю' },
 ];
 
 const projectOwnerOptions = [
@@ -70,30 +72,35 @@ const commonGroups = [
   {
     id: 'designOrganization',
     title: 'Дані проєктної організації',
+    helpText: 'Заповніть ці поля, якщо проєктна організація вже визначена. Якщо ні — залиште їх порожніми.',
     fields: [
       {
         name: 'designOrganizationName',
-        label: 'Найменування проєктної організації',
+        label: 'Назва проєктної організації',
         type: 'text',
         required: false,
+        placeholder: 'ТОВ «Проєкттепло»',
       },
       {
         name: 'designOrganizationAddress',
         label: 'Адреса проєктної організації',
         type: 'text',
         required: false,
+        placeholder: 'м. Київ, вул. Прикладна, 12',
       },
       {
         name: 'designOrganizationEmail',
-        label: 'Електронна адреса проєктної організації',
+        label: 'Email проєктної організації',
         type: 'email',
         required: false,
+        placeholder: 'project@example.com',
       },
       {
         name: 'designOrganizationPhone',
         label: 'Телефон проєктної організації',
         type: 'tel',
         required: false,
+        placeholder: '+380 67 123 45 67',
       },
     ],
   },
@@ -151,6 +158,7 @@ const commonGroups = [
         type: 'radio',
         required: false,
         options: projectOwnerOptions,
+        helpText: 'Оберіть, якщо вже відомо. Якщо не знаєте — залиште без вибору, оператор уточнить інформацію.',
       },
       {
         name: 'constructionExecutor',
@@ -158,6 +166,7 @@ const commonGroups = [
         type: 'radio',
         required: false,
         options: constructionExecutorOptions,
+        helpText: 'Оберіть, якщо вже відомо. Якщо не знаєте — залиште без вибору, оператор уточнить інформацію.',
       },
     ],
   },
@@ -167,10 +176,11 @@ const commonGroups = [
     fields: [
       {
         name: 'thirdPartyConnection',
-        label: 'Чи передбачається підключення третіх осіб до мереж замовника',
+        label: 'Чи передбачається підключення третіх осіб до мереж замовника?',
         type: 'radio',
         required: false,
         options: yesNoOptions,
+        helpText: 'Якщо вам невідомо, чи планується таке підключення, оберіть «Не знаю».',
       },
     ],
   },
@@ -184,13 +194,15 @@ const commonGroups = [
         type: 'select',
         required: false,
         options: responseMethodOptions,
+        helpText: 'Оберіть, як вам зручніше отримати повідомлення про результати розгляду заяви.',
       },
       {
         name: 'notificationMethod',
-        label: 'Контактна адреса або email для відповіді',
+        label: 'Email або поштова адреса для відповіді',
         type: 'text',
         required: false,
-        placeholder: 'Наприклад: name@example.com або поштова адреса',
+        placeholder: 'name@example.com або поштова адреса',
+        helpText: 'Вкажіть контакт відповідно до обраного способу отримання відповіді.',
       },
     ],
   },
@@ -200,6 +212,7 @@ const heatConsumerGroups = [
   {
     id: 'heatLoad',
     title: 'Теплове навантаження',
+    helpText: 'Якщо ви не знаєте окремі значення, залиште поля порожніми. Оператор уточнить дані під час розгляду заявки.',
     fields: [
       {
         name: 'permittedHeatLoad',
@@ -207,20 +220,22 @@ const heatConsumerGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
-        placeholder: 'Наприклад: 0.25',
-        helpText: 'Вкажіть значення з чинного договору, якщо об’єкт уже підключений.',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Вкажіть значення з чинного договору, якщо об’єкт уже підключений. Якщо не знаєте це значення, залиште поле порожнім.',
       },
       {
         name: 'heatSupplyContractNumber',
         label: 'Номер договору про користування тепловою енергією',
         type: 'text',
         required: false,
+        placeholder: 'за наявності',
       },
       {
         name: 'personalAccountNumber',
         label: 'Номер особового рахунку',
         type: 'text',
         required: false,
+        placeholder: 'за наявності',
       },
       {
         name: 'additionalHeatLoad',
@@ -228,6 +243,8 @@ const heatConsumerGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
       {
         name: 'totalHeatLoad',
@@ -235,6 +252,8 @@ const heatConsumerGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
       {
         name: 'heatingLoad',
@@ -242,6 +261,8 @@ const heatConsumerGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
       {
         name: 'hotWaterMaxLoad',
@@ -249,6 +270,8 @@ const heatConsumerGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
       {
         name: 'hotWaterAverageLoad',
@@ -256,6 +279,8 @@ const heatConsumerGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
       {
         name: 'ventilationLoad',
@@ -263,6 +288,8 @@ const heatConsumerGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
       {
         name: 'technologyLoad',
@@ -270,6 +297,8 @@ const heatConsumerGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
     ],
   },
@@ -282,12 +311,16 @@ const heatConsumerGroups = [
         label: 'Стислі дані про існуюче джерело теплопостачання',
         type: 'textarea',
         required: false,
+        placeholder: 'Наприклад: індивідуальна котельня, пічне опалення, відсутнє',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
       {
         name: 'heatObjectDescription',
         label: 'Стислі дані про об’єкт теплофікації',
         type: 'textarea',
         required: false,
+        placeholder: 'Коротко опишіть об’єкт, його призначення та особливості',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
     ],
   },
@@ -297,6 +330,7 @@ const heatGeneratorGroups = [
   {
     id: 'technicalCapacity',
     title: 'Технічна потужність',
+    helpText: 'Якщо ви не знаєте окремі значення, залиште поля порожніми. Оператор уточнить дані під час розгляду заявки.',
     fields: [
       {
         name: 'permittedHeatLoad',
@@ -304,12 +338,15 @@ const heatGeneratorGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
       {
         name: 'heatSupplyContractNumber',
-        label: 'Номер договору постачання / купівлі-продажу / транспортування теплової енергії',
+        label: 'Договір постачання / купівлі-продажу / транспортування теплової енергії №',
         type: 'text',
         required: false,
+        placeholder: 'за наявності',
       },
       {
         name: 'additionalCapacity',
@@ -317,6 +354,8 @@ const heatGeneratorGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
       {
         name: 'totalCapacity',
@@ -324,6 +363,8 @@ const heatGeneratorGroups = [
         type: 'number',
         required: false,
         unit: 'Гкал/год або МВт',
+        placeholder: 'Наприклад: 0,25 Гкал/год',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
     ],
   },
@@ -336,6 +377,8 @@ const heatGeneratorGroups = [
         label: 'Стислі дані про об’єкт теплофікації',
         type: 'textarea',
         required: false,
+        placeholder: 'Коротко опишіть об’єкт, його призначення та особливості',
+        helpText: 'Якщо ви не знаєте це значення, залиште поле порожнім. Оператор уточнить дані під час розгляду заявки.',
       },
     ],
   },

@@ -215,6 +215,7 @@ export function PendingApplicationAccessPage({
           <span>Email: {application.email}</span>
           <span>Телефон: {application.phone}</span>
           <span>Станція: {application.stationName}</span>
+          {application.objectRegion ? <span>Область: {application.objectRegion}</span> : null}
           <span>Об’єкт: {application.appendixData?.questionnaire?.objectName || application.objectAddress}</span>
           <span>Тип послуги: {connectionTypeLabels[application.connectionType]}</span>
           <span>Опитувальний лист: {applicationType.appendix}. {applicationType.title}</span>

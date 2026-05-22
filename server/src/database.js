@@ -21,7 +21,7 @@ fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(generatedDocumentsDir, { recursive: true });
 
-const schemaVersion = 6;
+const schemaVersion = 7;
 const db = new Database(databasePath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -101,6 +101,7 @@ db.exec(`
     phone TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL DEFAULT '',
     director_name TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
@@ -611,6 +612,8 @@ function migratePendingApplicationSupportToV6() {
 
 migratePendingApplicationSupportToV6();
 
+addColumnIfMissing('stations', 'region', "TEXT NOT NULL DEFAULT ''");
+
 function migrateApplicationStagesToV5() {
   addColumnIfMissing('stage_templates', 'is_optional', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('application_stages', 'is_optional', 'INTEGER NOT NULL DEFAULT 0');
@@ -1029,6 +1032,7 @@ const stationFields = `
   phone,
   email,
   director_name AS directorName,
+  region,
   notes,
   is_active AS isActive,
   created_at AS createdAt,
@@ -1136,8 +1140,8 @@ const getStationByIdStatement = db.prepare(`
 `);
 
 const createStationStatement = db.prepare(`
-  INSERT INTO stations (name, edrpou, address, phone, email, director_name, notes, is_active, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO stations (name, edrpou, address, phone, email, director_name, region, notes, is_active, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const updateStationStatement = db.prepare(`
@@ -1148,10 +1152,19 @@ const updateStationStatement = db.prepare(`
       phone = ?,
       email = ?,
       director_name = ?,
+      region = ?,
       notes = ?,
       is_active = ?,
       updated_at = ?
   WHERE id = ?
+`);
+
+const getActiveStationByRegionStatement = db.prepare(`
+  SELECT ${stationFields}
+  FROM stations
+  WHERE is_active = 1 AND region = ?
+  ORDER BY name COLLATE NOCASE ASC
+  LIMIT 1
 `);
 
 const listSettingsStatement = db.prepare(`
@@ -2231,6 +2244,7 @@ function mapApplication(row, {
   const completedCount = visibleStages.filter((stage) => stage.status === 'completed').length;
   const activeCount = visibleStages.filter((stage) => stage.status !== 'not_required').length;
   const deadlineData = parseJsonObject(row.deadlineData);
+  const appendixData = parseJsonObject(row.appendixData);
   const application = {
     id: row.id,
     stationId: row.stationId,
@@ -2254,12 +2268,13 @@ function mapApplication(row, {
     phone: includePrivate ? row.phone : undefined,
     email: includePrivate ? row.email : undefined,
     objectAddress: row.objectAddress,
+    objectRegion: appendixData.questionnaire?.objectRegion ?? '',
     connectionType: row.connectionType,
     status: row.status,
     receivedAt: row.receivedAt,
     responsibleName: includePrivate ? row.responsibleName : undefined,
     notes: includePrivate ? row.notes : undefined,
-    appendixData: includePrivate ? parseJsonObject(row.appendixData) : undefined,
+    appendixData: includePrivate ? appendixData : undefined,
     deadlineData: includePrivate ? deadlineData : undefined,
     customerUserId: includePrivate ? row.customerUserId : undefined,
     customerUserName: includePrivate ? row.customerUserName : undefined,
@@ -2894,6 +2909,10 @@ export function getStationById(stationId) {
   return mapStation(getStationByIdStatement.get(stationId));
 }
 
+export function getActiveStationByRegion(region) {
+  return mapStation(getActiveStationByRegionStatement.get(region));
+}
+
 export function createStation(input, actor) {
   const timestamp = getTimestamp();
   const result = createStationStatement.run(
@@ -2903,6 +2922,7 @@ export function createStation(input, actor) {
     input.phone,
     input.email,
     input.directorName,
+    input.region,
     input.notes,
     input.isActive ? 1 : 0,
     timestamp,
@@ -2937,6 +2957,7 @@ export function updateStation(stationId, input, actor) {
     input.phone,
     input.email,
     input.directorName,
+    input.region,
     input.notes,
     input.isActive ? 1 : 0,
     getTimestamp(),

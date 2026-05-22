@@ -5,11 +5,19 @@ import {
   getApplicationTypeConfig,
   getApplicationTypeOptions,
 } from '../config/applicationFormConfig';
+import { UKRAINE_REGIONS } from '../config/ukraineRegions';
+import {
+  formatUkrainianPhone,
+  normalizeUkrainianPhone,
+  UKRAINIAN_PHONE_PREFIX,
+  validateUkrainianPhone,
+} from '../utils';
 import { DynamicApplicationFields } from './forms/DynamicApplicationFields';
+import { ToastMessage } from './ToastMessage';
 
 const stepTitles = [
   'Дані заявника',
-  'Дані об’єкта',
+  'Дані об’єкта для підключення',
   'Тип приєднання',
   'Опитувальний лист',
   'Додаткові матеріали',
@@ -29,6 +37,12 @@ const hiddenQuestionnaireFields = [
   'commissioningYear',
 ];
 
+const RESPONSE_METHOD_EMAIL = 'Електронною поштою';
+const RESPONSE_METHOD_POST = 'Поштою';
+const RESPONSE_METHOD_IN_PERSON = 'За місцем подання заяви';
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const phoneFieldNames = new Set(['phone', 'customerPhone', 'designOrganizationPhone', 'representativePhone']);
+
 export function createPublicApplicationInitialValues(application = null) {
   const questionnaire = application?.appendixData?.questionnaire ?? {};
   const appendix3 = application?.appendixData?.appendix3 ?? {};
@@ -36,7 +50,7 @@ export function createPublicApplicationInitialValues(application = null) {
 
   return {
     fullName: application?.applicantFullName ?? questionnaire.customerName ?? '',
-    stationId: application?.stationId ? String(application.stationId) : '',
+    objectRegion: application?.objectRegion ?? questionnaire.objectRegion ?? '',
     phone: application?.phone ?? questionnaire.customerPhone ?? '',
     email: application?.email ?? questionnaire.customerEmail ?? '',
     mailingAddress: appendix3.mailingAddress ?? questionnaire.customerAddress ?? '',
@@ -52,6 +66,15 @@ export function createPublicApplicationInitialValues(application = null) {
     notes: application?.notes ?? '',
     ...createEmptyQuestionnaireValues(questionnaireType),
     ...questionnaire,
+  };
+}
+
+function normalizeInitialValues(values) {
+  return {
+    ...values,
+    phone: formatUkrainianPhone(values.phone),
+    customerPhone: formatUkrainianPhone(values.customerPhone || values.phone),
+    designOrganizationPhone: formatUkrainianPhone(values.designOrganizationPhone),
   };
 }
 
@@ -90,75 +113,311 @@ function preserveSharedValues(current, nextType) {
   };
 }
 
+function isBlank(value) {
+  return String(value ?? '').trim() === '';
+}
+
+function isValidYear(value) {
+  if (isBlank(value)) {
+    return true;
+  }
+
+  const year = String(value).trim();
+  const numericYear = Number(year);
+
+  return /^\d{4}$/.test(year) && numericYear >= 1900 && numericYear <= 2100;
+}
+
+function getConnectionTypeLabel(value) {
+  return value === 'temporary' ? 'Тимчасове приєднання' : 'Приєднання до теплових мереж';
+}
+
+function getDefaultNotificationContact(form, responseMethod = form.responseMethod) {
+  if (responseMethod === RESPONSE_METHOD_EMAIL) {
+    return form.email;
+  }
+
+  if (responseMethod === RESPONSE_METHOD_POST) {
+    return form.mailingAddress;
+  }
+
+  if (responseMethod === RESPONSE_METHOD_IN_PERSON) {
+    return '';
+  }
+
+  return form.notificationMethod || form.email;
+}
+
+function normalizeOptionalPhone(value) {
+  return isBlank(value) ? '' : normalizeUkrainianPhone(value);
+}
+
+function getVisibleQuestionnaireFields(applicationType) {
+  const hiddenFieldSet = new Set(hiddenQuestionnaireFields);
+
+  return applicationType.groups
+    .flatMap((group) => group.fields)
+    .filter((field) => !hiddenFieldSet.has(field.name));
+}
+
+function FieldError({ id, message }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <small className="form-error field-error" id={id}>
+      {message}
+    </small>
+  );
+}
+
 export function PublicApplicationForm({
   disabled = false,
   initialValues = null,
   onCancel,
   onSubmit,
-  stations = [],
   submitLabel = 'Подати заяву',
 }) {
   const [stepIndex, setStepIndex] = useState(0);
-  const [form, setForm] = useState(() => initialValues ?? createPublicApplicationInitialValues());
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [form, setForm] = useState(() => normalizeInitialValues(initialValues ?? createPublicApplicationInitialValues()));
+  const [toast, setToast] = useState(null);
   const selectedApplicationType = getApplicationTypeConfig(form.questionnaireType);
   const isLastStep = stepIndex === stepTitles.length - 1;
   const progress = useMemo(
     () => Math.round(((stepIndex + 1) / stepTitles.length) * 100),
     [stepIndex],
   );
+  const reviewItems = useMemo(() => ([
+    ['ПІБ / найменування заявника', form.fullName],
+    ['Email', form.email],
+    ['Телефон', form.phone],
+    ['Поштова адреса для листування', form.mailingAddress],
+    ['Область об’єкта', form.objectRegion],
+    ['Назва об’єкта', form.objectName || form.objectAddress],
+    ['Адреса об’єкта', form.objectAddress],
+    ['Тип приєднання', getConnectionTypeLabel(form.connectionType)],
+    ['Тип установки', `${selectedApplicationType.appendix}. ${selectedApplicationType.title}`],
+    ['Спосіб отримання відповіді', form.responseMethod],
+    ['Контакт для відповіді', form.notificationMethod],
+    ['Підстава або причина звернення', form.connectionReason],
+    ['Додаткова інформація для оператора', form.notes],
+  ].filter(([, value]) => !isBlank(value))), [form, selectedApplicationType]);
+
+  function clearFieldError(key) {
+    setFieldErrors((current) => {
+      if (!current[key]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
 
   function updateField(key, value) {
-    setForm((current) => {
-      const shouldMirrorNotification = !current.notificationMethod || current.notificationMethod === current.email;
+    const nextValue = phoneFieldNames.has(key) ? formatUkrainianPhone(value) : value;
+    clearFieldError(key);
+    if (['email', 'mailingAddress', 'responseMethod'].includes(key)) {
+      clearFieldError('notificationMethod');
+    }
 
-      return {
+    setForm((current) => {
+      const shouldMirrorNotification = !current.notificationMethod || current.notificationMethod === current.email || current.notificationMethod === current.mailingAddress;
+      const nextState = {
         ...current,
-        [key]: value,
-        ...(key === 'fullName' ? { customerName: value } : {}),
-        ...(key === 'phone' ? { customerPhone: value } : {}),
+        [key]: nextValue,
+        ...(key === 'fullName' ? { customerName: nextValue } : {}),
+        ...(key === 'phone' ? { customerPhone: nextValue } : {}),
         ...(key === 'email'
           ? {
-            customerEmail: value,
-            ...(shouldMirrorNotification ? { notificationMethod: value } : {}),
+            customerEmail: nextValue,
+            ...(shouldMirrorNotification && current.responseMethod !== RESPONSE_METHOD_POST ? { notificationMethod: nextValue } : {}),
           }
           : {}),
-        ...(key === 'mailingAddress' ? { customerAddress: value } : {}),
-        ...(key === 'objectName' ? { objectName: value } : {}),
-        ...(key === 'objectAddress' ? { objectAddress: value } : {}),
+        ...(key === 'mailingAddress'
+          ? {
+            customerAddress: nextValue,
+            ...(shouldMirrorNotification && current.responseMethod === RESPONSE_METHOD_POST ? { notificationMethod: nextValue } : {}),
+          }
+          : {}),
+        ...(key === 'objectName' ? { objectName: nextValue } : {}),
+        ...(key === 'objectAddress' ? { objectAddress: nextValue } : {}),
       };
+
+      if (key === 'responseMethod') {
+        nextState.notificationMethod = getDefaultNotificationContact(nextState, nextValue);
+      }
+
+      return nextState;
     });
   }
 
   function updateApplicationType(typeId) {
-    setForm((current) => preserveSharedValues(current, typeId));
+    setForm((current) => normalizeInitialValues(preserveSharedValues(current, typeId)));
+    setFieldErrors({});
+  }
+
+  function showToast(message, tone = 'error') {
+    setToast({
+      id: Date.now(),
+      message,
+      tone,
+    });
+  }
+
+  function handlePrimaryPhoneFocus() {
+    if (isBlank(form.phone)) {
+      updateField('phone', UKRAINIAN_PHONE_PREFIX);
+    }
+  }
+
+  function validateEmailField(errors, key, value, { required = false } = {}) {
+    if (required && isBlank(value)) {
+      errors[key] = 'Заповніть це поле.';
+      return;
+    }
+
+    if (!isBlank(value) && !emailPattern.test(String(value).trim())) {
+      errors[key] = 'Введіть коректну email-адресу.';
+    }
+  }
+
+  function validatePhoneField(errors, key, value, { required = false } = {}) {
+    if (required && isBlank(value)) {
+      errors[key] = 'Заповніть це поле.';
+      return;
+    }
+
+    if (!isBlank(value) && !validateUkrainianPhone(value)) {
+      errors[key] = 'Введіть номер телефону у форматі +380 XX XXX XX XX.';
+    }
+  }
+
+  function validateRequiredField(errors, key, value, message = 'Заповніть це поле.') {
+    if (isBlank(value)) {
+      errors[key] = message;
+    }
+  }
+
+  function validateYearField(errors, key, value) {
+    if (!isValidYear(value)) {
+      errors[key] = 'Введіть рік у форматі YYYY.';
+    }
+  }
+
+  function validateQuestionnaireFields(errors) {
+    const visibleFields = getVisibleQuestionnaireFields(selectedApplicationType);
+
+    visibleFields.forEach((field) => {
+      if (field.required) {
+        validateRequiredField(
+          errors,
+          field.name,
+          form[field.name],
+          field.name === 'responseMethod' ? 'Оберіть спосіб отримання відповіді.' : 'Заповніть це поле.',
+        );
+      }
+
+      if (field.type === 'email') {
+        validateEmailField(errors, field.name, form[field.name]);
+      }
+
+      if (field.type === 'tel') {
+        validatePhoneField(errors, field.name, form[field.name]);
+      }
+    });
+
+    validateRequiredField(errors, 'responseMethod', form.responseMethod, 'Оберіть спосіб отримання відповіді.');
+
+    if (form.responseMethod === RESPONSE_METHOD_EMAIL) {
+      validateEmailField(errors, 'notificationMethod', form.notificationMethod || form.email, { required: true });
+    }
+
+    if (form.responseMethod === RESPONSE_METHOD_POST) {
+      validateRequiredField(errors, 'notificationMethod', form.notificationMethod || form.mailingAddress, 'Вкажіть поштову адресу для відповіді.');
+    }
+  }
+
+  function validateCurrentStep() {
+    const errors = {};
+
+    if (stepIndex === 0) {
+      validateRequiredField(errors, 'fullName', form.fullName);
+      validateEmailField(errors, 'email', form.email, { required: true });
+      validatePhoneField(errors, 'phone', form.phone, { required: true });
+      validateRequiredField(errors, 'mailingAddress', form.mailingAddress);
+    }
+
+    if (stepIndex === 1) {
+      validateRequiredField(errors, 'objectRegion', form.objectRegion, 'Оберіть область, у якій розташований об’єкт підключення.');
+      validateRequiredField(errors, 'objectName', form.objectName);
+      validateRequiredField(errors, 'objectAddress', form.objectAddress);
+      validateYearField(errors, 'constructionStartYear', form.constructionStartYear);
+      validateYearField(errors, 'commissioningYear', form.commissioningYear);
+    }
+
+    if (stepIndex === 3) {
+      validateQuestionnaireFields(errors);
+    }
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      showToast('Перевірте поля форми та виправте помилки.');
+      return false;
+    }
+
+    return true;
+  }
+
+  function createSubmissionPayload() {
+    const normalizedPhone = normalizeUkrainianPhone(form.phone);
+    const notificationMethod = form.notificationMethod || getDefaultNotificationContact(form);
+
+    return {
+      ...form,
+      phone: normalizedPhone,
+      customerName: form.fullName,
+      customerAddress: form.mailingAddress,
+      customerDistrict: form.customerDistrict,
+      customerEmail: form.email,
+      customerPhone: normalizedPhone,
+      designOrganizationPhone: normalizeOptionalPhone(form.designOrganizationPhone),
+      objectName: form.objectName || form.objectAddress,
+      objectAddress: form.objectAddress,
+      objectRegion: form.objectRegion,
+      plannedWorks: form.plannedWorks,
+      constructionStartYear: form.constructionStartYear,
+      commissioningYear: form.commissioningYear,
+      notificationMethod,
+    };
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
+
+    if (!validateCurrentStep()) {
+      return;
+    }
 
     if (!isLastStep) {
       setStepIndex((current) => Math.min(current + 1, stepTitles.length - 1));
       return;
     }
 
-    await onSubmit({
-      ...form,
-      customerName: form.fullName,
-      customerAddress: form.mailingAddress,
-      customerDistrict: form.customerDistrict,
-      customerEmail: form.email,
-      customerPhone: form.phone,
-      objectName: form.objectName || form.objectAddress,
-      objectAddress: form.objectAddress,
-      plannedWorks: form.plannedWorks,
-      constructionStartYear: form.constructionStartYear,
-      commissioningYear: form.commissioningYear,
-      notificationMethod: form.notificationMethod || form.email,
-    });
+    await onSubmit(createSubmissionPayload());
   }
 
   return (
-    <form className="registration-form public-application-form" onSubmit={handleSubmit}>
+    <form className="registration-form public-application-form" noValidate onSubmit={handleSubmit}>
+      <ToastMessage
+        key={toast?.id}
+        message={toast?.message}
+        onClose={() => setToast(null)}
+        tone={toast?.tone}
+      />
       <div className="form-progress field-block--wide" aria-label="Прогрес подання заяви">
         <div className="form-progress__meta">
           <strong>{stepTitles[stepIndex]}</strong>
@@ -173,47 +432,137 @@ export function PublicApplicationForm({
         <section className="registration-section">
           <h2>Дані заявника</h2>
           <label className="field-block field-block--wide">
-            <span>ПІБ / найменування заявника</span>
-            <input className="field-input" disabled={disabled} onChange={(event) => updateField('fullName', event.target.value)} required value={form.fullName} />
+            <span>ПІБ / найменування заявника <small className="field-unit">обов’язково</small></span>
+            <input
+              aria-describedby={fieldErrors.fullName ? 'fullName-error' : undefined}
+              aria-invalid={Boolean(fieldErrors.fullName)}
+              className="field-input"
+              disabled={disabled}
+              onChange={(event) => updateField('fullName', event.target.value)}
+              placeholder="Наприклад: Іваненко Іван Іванович"
+              required
+              value={form.fullName}
+            />
+            <FieldError id="fullName-error" message={fieldErrors.fullName} />
           </label>
           <label className="field-block">
-            <span>Email</span>
-            <input className="field-input" disabled={disabled} onChange={(event) => updateField('email', event.target.value)} required type="email" value={form.email} />
+            <span>Email <small className="field-unit">обов’язково</small></span>
+            <input
+              aria-describedby={['email-help', fieldErrors.email ? 'email-error' : ''].filter(Boolean).join(' ')}
+              aria-invalid={Boolean(fieldErrors.email)}
+              className="field-input"
+              disabled={disabled}
+              onChange={(event) => updateField('email', event.target.value)}
+              placeholder="name@example.com"
+              required
+              type="email"
+              value={form.email}
+            />
+            <small className="field-help" id="email-help">
+              На цю адресу буде прив’язана заявка та майбутній доступ до особистого кабінету.
+            </small>
+            <FieldError id="email-error" message={fieldErrors.email} />
           </label>
           <label className="field-block">
-            <span>Телефон</span>
-            <input className="field-input" disabled={disabled} onChange={(event) => updateField('phone', event.target.value)} required type="tel" value={form.phone} />
+            <span>Номер телефону <small className="field-unit">обов’язково</small></span>
+            <input
+              aria-describedby={['phone-help', fieldErrors.phone ? 'phone-error' : ''].filter(Boolean).join(' ')}
+              aria-invalid={Boolean(fieldErrors.phone)}
+              className="field-input"
+              disabled={disabled}
+              inputMode="tel"
+              onChange={(event) => updateField('phone', event.target.value)}
+              onFocus={handlePrimaryPhoneFocus}
+              placeholder="+380 67 123 45 67"
+              required
+              type="tel"
+              value={form.phone}
+            />
+            <small className="field-help" id="phone-help">
+              Введіть номер телефону у форматі +380 XX XXX XX XX.
+            </small>
+            <FieldError id="phone-error" message={fieldErrors.phone} />
           </label>
           <label className="field-block field-block--wide">
-            <span>Адреса для листування</span>
-            <input className="field-input" disabled={disabled} onChange={(event) => updateField('mailingAddress', event.target.value)} required value={form.mailingAddress} />
-          </label>
-          <label className="field-block field-block--wide">
-            <span>Адміністративний район <small className="field-unit">за наявності</small></span>
-            <input className="field-input" disabled={disabled} onChange={(event) => updateField('customerDistrict', event.target.value)} value={form.customerDistrict} />
+            <span>Поштова адреса для листування <small className="field-unit">обов’язково</small></span>
+            <input
+              aria-describedby={['mailingAddress-help', fieldErrors.mailingAddress ? 'mailingAddress-error' : ''].filter(Boolean).join(' ')}
+              aria-invalid={Boolean(fieldErrors.mailingAddress)}
+              className="field-input"
+              disabled={disabled}
+              onChange={(event) => updateField('mailingAddress', event.target.value)}
+              placeholder="м. Київ, вул. Хрещатик, 1, кв. 12"
+              required
+              value={form.mailingAddress}
+            />
+            <small className="field-help" id="mailingAddress-help">
+              Вкажіть фізичну адресу для офіційного листування. Це не email.
+            </small>
+            <FieldError id="mailingAddress-error" message={fieldErrors.mailingAddress} />
           </label>
         </section>
       ) : null}
 
       {stepIndex === 1 ? (
         <section className="registration-section">
-          <h2>Дані об’єкта</h2>
+          <h2>Дані об’єкта для підключення</h2>
+          <p className="muted-copy field-block--wide">
+            Вкажіть інформацію про об’єкт, який планується підключити до теплових мереж.
+          </p>
           <label className="field-block field-block--wide">
-            <span>Станція/компанія</span>
-            <select className="field-input" disabled={disabled} onChange={(event) => updateField('stationId', event.target.value)} required value={form.stationId}>
-              <option value="">Оберіть станцію</option>
-              {stations.map((station) => (
-                <option key={station.id} value={station.id}>{station.name}</option>
+            <span>Область, де розташований об’єкт підключення <small className="field-unit">обов’язково</small></span>
+            <select
+              aria-describedby={['objectRegion-help', fieldErrors.objectRegion ? 'objectRegion-error' : ''].filter(Boolean).join(' ')}
+              aria-invalid={Boolean(fieldErrors.objectRegion)}
+              className="field-input"
+              disabled={disabled}
+              onChange={(event) => updateField('objectRegion', event.target.value)}
+              required
+              value={form.objectRegion}
+            >
+              <option value="">Оберіть область</option>
+              {UKRAINE_REGIONS.map((region) => (
+                <option key={region} value={region}>{region}</option>
               ))}
             </select>
+            <small className="field-help" id="objectRegion-help">
+              Оберіть область, у якій розташований об’єкт підключення. За областю система визначить відповідального менеджера.
+            </small>
+            <FieldError id="objectRegion-error" message={fieldErrors.objectRegion} />
           </label>
           <label className="field-block field-block--wide">
-            <span>Назва об’єкта</span>
-            <input className="field-input" disabled={disabled} onChange={(event) => updateField('objectName', event.target.value)} required value={form.objectName} />
+            <span>Назва об’єкта для підключення <small className="field-unit">обов’язково</small></span>
+            <input
+              aria-describedby={['objectName-help', fieldErrors.objectName ? 'objectName-error' : ''].filter(Boolean).join(' ')}
+              aria-invalid={Boolean(fieldErrors.objectName)}
+              className="field-input"
+              disabled={disabled}
+              onChange={(event) => updateField('objectName', event.target.value)}
+              placeholder="Житловий будинок, офісна будівля, виробниче приміщення"
+              required
+              value={form.objectName}
+            />
+            <small className="field-help" id="objectName-help">
+              Вкажіть назву або короткий опис об’єкта, який планується підключити.
+            </small>
+            <FieldError id="objectName-error" message={fieldErrors.objectName} />
           </label>
           <label className="field-block field-block--wide">
-            <span>Адреса об’єкта</span>
-            <input className="field-input" disabled={disabled} onChange={(event) => updateField('objectAddress', event.target.value)} required value={form.objectAddress} />
+            <span>Адреса об’єкта для підключення <small className="field-unit">обов’язково</small></span>
+            <input
+              aria-describedby={['objectAddress-help', fieldErrors.objectAddress ? 'objectAddress-error' : ''].filter(Boolean).join(' ')}
+              aria-invalid={Boolean(fieldErrors.objectAddress)}
+              className="field-input"
+              disabled={disabled}
+              onChange={(event) => updateField('objectAddress', event.target.value)}
+              placeholder="м. Київ, вул. Енергетична, 10"
+              required
+              value={form.objectAddress}
+            />
+            <small className="field-help" id="objectAddress-help">
+              Вкажіть адресу об’єкта, який планується підключити до теплових мереж.
+            </small>
+            <FieldError id="objectAddress-error" message={fieldErrors.objectAddress} />
           </label>
           <label className="field-block">
             <span>Будівництво або реконструкція <small className="field-unit">якщо відомо</small></span>
@@ -226,11 +575,41 @@ export function PublicApplicationForm({
           </label>
           <label className="field-block">
             <span>Рік початку робіт <small className="field-unit">якщо відомо</small></span>
-            <input className="field-input" disabled={disabled} onChange={(event) => updateField('constructionStartYear', event.target.value)} placeholder="Наприклад: 2026" type="number" value={form.constructionStartYear} />
+            <input
+              aria-describedby={['constructionStartYear-help', fieldErrors.constructionStartYear ? 'constructionStartYear-error' : ''].filter(Boolean).join(' ')}
+              aria-invalid={Boolean(fieldErrors.constructionStartYear)}
+              className="field-input"
+              disabled={disabled}
+              max="2100"
+              min="1900"
+              onChange={(event) => updateField('constructionStartYear', event.target.value)}
+              placeholder="2026"
+              type="number"
+              value={form.constructionStartYear}
+            />
+            <small className="field-help" id="constructionStartYear-help">
+              Якщо точний рік невідомий, залиште поле порожнім.
+            </small>
+            <FieldError id="constructionStartYear-error" message={fieldErrors.constructionStartYear} />
           </label>
           <label className="field-block">
             <span>Рік введення в експлуатацію <small className="field-unit">якщо відомо</small></span>
-            <input className="field-input" disabled={disabled} onChange={(event) => updateField('commissioningYear', event.target.value)} placeholder="Наприклад: 2027" type="number" value={form.commissioningYear} />
+            <input
+              aria-describedby={['commissioningYear-help', fieldErrors.commissioningYear ? 'commissioningYear-error' : ''].filter(Boolean).join(' ')}
+              aria-invalid={Boolean(fieldErrors.commissioningYear)}
+              className="field-input"
+              disabled={disabled}
+              max="2100"
+              min="1900"
+              onChange={(event) => updateField('commissioningYear', event.target.value)}
+              placeholder="2026"
+              type="number"
+              value={form.commissioningYear}
+            />
+            <small className="field-help" id="commissioningYear-help">
+              Якщо точний рік невідомий, залиште поле порожнім.
+            </small>
+            <FieldError id="commissioningYear-error" message={fieldErrors.commissioningYear} />
           </label>
         </section>
       ) : null}
@@ -276,8 +655,10 @@ export function PublicApplicationForm({
           <DynamicApplicationFields
             applicationType={selectedApplicationType}
             disabled={disabled}
+            errors={fieldErrors}
             hiddenFields={hiddenQuestionnaireFields}
             onChange={updateField}
+            requiredFields={['responseMethod']}
             values={form}
           />
         </section>
@@ -290,12 +671,32 @@ export function PublicApplicationForm({
             Завантаження файлів у публічній формі буде підключено окремо. Якщо оператору знадобляться додаткові матеріали, заяву буде повернуто на доповнення.
           </p>
           <label className="field-block field-block--wide">
-            <span>Підстава або причина приєднання</span>
-            <textarea className="field-input field-textarea" disabled={disabled} onChange={(event) => updateField('connectionReason', event.target.value)} rows={3} value={form.connectionReason} />
+            <span>Підстава або причина звернення <small className="field-unit">якщо відомо</small></span>
+            <textarea
+              className="field-input field-textarea"
+              disabled={disabled}
+              onChange={(event) => updateField('connectionReason', event.target.value)}
+              placeholder="Наприклад: нове підключення об’єкта, збільшення теплового навантаження, зміна вимог до надійності"
+              rows={3}
+              value={form.connectionReason}
+            />
+            <small className="field-help">
+              Вкажіть причину звернення, якщо вона вам відома. Це допоможе оператору швидше опрацювати заяву.
+            </small>
           </label>
           <label className="field-block field-block--wide">
-            <span>Примітки</span>
-            <textarea className="field-input field-textarea" disabled={disabled} onChange={(event) => updateField('notes', event.target.value)} rows={3} value={form.notes} />
+            <span>Додаткова інформація для оператора <small className="field-unit">необов’язково</small></span>
+            <textarea
+              className="field-input field-textarea"
+              disabled={disabled}
+              onChange={(event) => updateField('notes', event.target.value)}
+              placeholder="Напишіть інформацію, яку вважаєте важливою для розгляду заяви"
+              rows={3}
+              value={form.notes}
+            />
+            <small className="field-help">
+              Це поле необов’язкове.
+            </small>
           </label>
         </section>
       ) : null}
@@ -304,12 +705,9 @@ export function PublicApplicationForm({
         <section className="registration-section">
           <h2>Перевірка</h2>
           <div className="appendix-data-grid field-block--wide">
-            <span><strong>Заявник</strong>{form.fullName}</span>
-            <span><strong>Email</strong>{form.email}</span>
-            <span><strong>Телефон</strong>{form.phone}</span>
-            <span><strong>Об’єкт</strong>{form.objectName || form.objectAddress}</span>
-            <span><strong>Адреса об’єкта</strong>{form.objectAddress}</span>
-            <span><strong>Тип</strong>{selectedApplicationType.appendix}. {selectedApplicationType.title}</span>
+            {reviewItems.map(([label, value]) => (
+              <span key={label}><strong>{label}</strong>{value}</span>
+            ))}
           </div>
           <p className="muted-copy field-block--wide">
             Після подання буде створено тимчасовий кабінет заявки. Повноцінний особистий кабінет відкриється після прийняття заявки оператором.

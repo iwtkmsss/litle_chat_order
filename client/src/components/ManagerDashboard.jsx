@@ -32,6 +32,7 @@ function createEmptyStationForm() {
     phone: '',
     email: '',
     directorName: '',
+    region: '',
     notes: '',
     isActive: true,
   };
@@ -129,6 +130,7 @@ function normalizeStationDraft(station) {
     phone: station.phone ?? '',
     email: station.email ?? '',
     directorName: station.directorName ?? '',
+    region: station.region ?? '',
     notes: station.notes ?? '',
     isActive: station.isActive,
   };

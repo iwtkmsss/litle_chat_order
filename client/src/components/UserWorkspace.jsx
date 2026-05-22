@@ -262,6 +262,7 @@ export function UserWorkspace({ user, onLogout }) {
             <div className="detail-meta-grid">
               <span>Дата подання: {formatDate(selectedApplication.receivedAt)}</span>
               <span>Станція: {selectedApplication.stationName}</span>
+              {selectedApplication.objectRegion ? <span>Область: {selectedApplication.objectRegion}</span> : null}
               <span>Адреса об’єкта: {selectedApplication.objectAddress}</span>
               <span>{getApplicationStatusDescription(selectedApplication.status, 'customer')}</span>
             </div>

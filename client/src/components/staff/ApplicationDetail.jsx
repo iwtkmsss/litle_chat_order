@@ -156,6 +156,7 @@ export function ApplicationDetail({
 
       <div className="detail-meta-grid">
         <span>{selectedApplication.stationName}</span>
+        {selectedApplication.objectRegion ? <span>Область: {selectedApplication.objectRegion}</span> : null}
         <span>{connectionTypeLabels[selectedApplication.connectionType]}</span>
         <span>{currentStatusLabel}</span>
         <span>Телефон: {selectedApplication.phone}</span>

@@ -1,3 +1,5 @@
+import { UKRAINE_REGIONS } from '../../config/ukraineRegions';
+
 function normalizeStationDraft(station) {
   return {
     name: station.name ?? '',
@@ -6,6 +8,7 @@ function normalizeStationDraft(station) {
     phone: station.phone ?? '',
     email: station.email ?? '',
     directorName: station.directorName ?? '',
+    region: station.region ?? '',
     notes: station.notes ?? '',
     isActive: station.isActive,
   };
@@ -61,6 +64,29 @@ export function StationSettingsPanel({
                     />
                   </label>
                 ))}
+                <label className="field-block">
+                  <span>Область обслуговування</span>
+                  <select
+                    className="field-input"
+                    onChange={(event) =>
+                      setStationDrafts((current) => ({
+                        ...current,
+                        [station.id]: { ...draft, region: event.target.value },
+                      }))
+                    }
+                    value={draft.region}
+                  >
+                    <option value="">Не закріплено</option>
+                    {UKRAINE_REGIONS.map((region) => (
+                      <option key={region} value={region}>
+                        {region}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="field-help">
+                    Без області станція не буде використовуватись для автоматичного розподілу заявок.
+                  </small>
+                </label>
               </div>
 
               <label className="field-block">
@@ -162,6 +188,26 @@ export function StationCreateForm({ disabled, onSubmit, setStationForm, stationF
           type="email"
           value={stationForm.email}
         />
+      </label>
+
+      <label className="field-block">
+        <span>Область обслуговування</span>
+        <select
+          className="field-input"
+          disabled={disabled}
+          onChange={(event) => setStationForm((current) => ({ ...current, region: event.target.value }))}
+          value={stationForm.region}
+        >
+          <option value="">Не закріплено</option>
+          {UKRAINE_REGIONS.map((region) => (
+            <option key={region} value={region}>
+              {region}
+            </option>
+          ))}
+        </select>
+        <small className="field-help">
+          Без області станція не буде використовуватись для автоматичного розподілу заявок.
+        </small>
       </label>
 
       <label className="field-block">

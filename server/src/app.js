@@ -27,6 +27,7 @@ import {
   getGeneratedDocumentById,
   getPendingApplicationSession,
   getSessionUser,
+  getActiveStationByRegion,
   getStationById,
   getUserById,
   hasAdmin,
@@ -75,6 +76,7 @@ import {
   sanitizeQuestionnairePayload,
 } from './applicationFormSchema.js';
 import { isValidApplicationStatus } from './applicationStatusWorkflow.js';
+import { normalizeRegion } from './ukraineRegions.js';
 import { removeStoredFiles, removeUploadedFiles, upload } from './uploads.js';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -142,6 +144,26 @@ function validatePhone(value) {
   }
 
   return phone;
+}
+
+function validatePublicUkrainianPhone(value) {
+  const phone = validateRequiredText(value, 13, 24, 'Номер телефону');
+  const digits = phone.replace(/\D/g, '');
+  let localDigits = '';
+
+  if (digits.startsWith('380')) {
+    localDigits = digits.slice(3);
+  } else if (digits.startsWith('0')) {
+    localDigits = digits.slice(1);
+  } else {
+    localDigits = digits;
+  }
+
+  if (localDigits.length !== 9) {
+    throw new Error('Введіть номер телефону у форматі +380 XX XXX XX XX.');
+  }
+
+  return `+380${localDigits}`;
 }
 
 function validateEmail(value, { required = false } = {}) {
@@ -213,6 +235,12 @@ function getRequestMetadata(request) {
 }
 
 function validateStationPayload(input) {
+  const region = input?.region ? normalizeRegion(input.region) : '';
+
+  if (input?.region && !region) {
+    throw new Error('Оберіть коректну область обслуговування.');
+  }
+
   return {
     name: validateRequiredText(input?.name, 2, 180, 'Назва станції/компанії'),
     edrpou: validateOptionalText(input?.edrpou, 30, 'ЄДРПОУ'),
@@ -220,6 +248,7 @@ function validateStationPayload(input) {
     phone: validateOptionalText(input?.phone, 80, 'Телефон'),
     email: validateEmail(input?.email),
     directorName: validateOptionalText(input?.directorName, 180, 'ПІБ керівника'),
+    region,
     notes: validateOptionalText(input?.notes, 2000, 'Примітки'),
     isActive: input?.isActive === undefined ? true : validateBoolean(input.isActive),
   };
@@ -467,9 +496,21 @@ function validateCreateUserPayload(input, actor) {
 }
 
 function validatePublicRegistrationPayload(input) {
-  const stationId = validateStationId(input?.stationId);
+  const objectRegion = normalizeRegion(input?.objectRegion);
+
+  if (!objectRegion) {
+    throw new Error('Оберіть область, у якій розташований об’єкт підключення.');
+  }
+
+  const station = getActiveStationByRegion(objectRegion);
+
+  if (!station) {
+    throw new Error('Наразі для обраної області немає доступного відповідального менеджера. Заяву неможливо подати через електронний сервіс.');
+  }
+
+  const stationId = station.id;
   const fullName = validateFullName(input?.fullName ?? '');
-  const phone = validatePhone(input?.phone ?? '');
+  const phone = validatePublicUkrainianPhone(input?.phone ?? '');
   const email = validateEmail(input?.email ?? '', { required: true });
   const objectAddress = validateRequiredText(input?.objectAddress, 3, 500, 'Адреса або назва об’єкта');
   const connectionType = String(input?.connectionType ?? 'standard');
@@ -501,6 +542,7 @@ function validatePublicRegistrationPayload(input) {
       customerPhone: input?.customerPhone || phone,
       objectName,
       objectAddress,
+      objectRegion,
       notificationMethod: input?.notificationMethod || email,
     },
   });
@@ -512,6 +554,7 @@ function validatePublicRegistrationPayload(input) {
     phone,
     email,
     objectAddress,
+    objectRegion,
     connectionType,
     receivedAt: new Date().toISOString().slice(0, 10),
     responsibleName: '',
