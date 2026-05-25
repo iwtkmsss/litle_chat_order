@@ -1,9 +1,64 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const currentFile = fileURLToPath(import.meta.url);
+const scriptDir = path.dirname(currentFile);
+const projectRoot = path.resolve(scriptDir, '..');
+const publicEnvFile = resolveEnvFile(process.env.PUBLIC_ENV_FILE || '.env.public');
+
+loadEnvFile(publicEnvFile);
 
 const mode = process.argv[2] ?? 'preview';
 const clientPort = Number(process.env.CLIENT_PORT || process.env.PUBLIC_CLIENT_PORT) || 5173;
 const serverPort = Number(process.env.PORT || process.env.SERVER_PORT || process.env.PUBLIC_SERVER_PORT) || 3001;
+
+function resolveEnvFile(filePath) {
+  return path.isAbsolute(filePath) ? filePath : path.resolve(projectRoot, filePath);
+}
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  const contents = fs.readFileSync(filePath, 'utf8');
+
+  for (const rawLine of contents.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/u.exec(line);
+
+    if (!match) {
+      continue;
+    }
+
+    const [, key, rawValue] = match;
+
+    if (Object.prototype.hasOwnProperty.call(process.env, key)) {
+      continue;
+    }
+
+    process.env[key] = parseEnvValue(rawValue);
+  }
+}
+
+function parseEnvValue(rawValue) {
+  const value = rawValue.trim();
+  const quote = value[0];
+
+  if ((quote === '"' || quote === "'") && value.endsWith(quote)) {
+    return value.slice(1, -1);
+  }
+
+  return value.replace(/\s+#.*$/u, '').trim();
+}
 
 function detectIpv4() {
   for (const addresses of Object.values(os.networkInterfaces())) {
@@ -37,9 +92,13 @@ const publicEnv = {
 };
 
 function printUrls() {
+  if (fs.existsSync(publicEnvFile)) {
+    console.log(`Loaded public env: ${publicEnvFile}`);
+  }
+
   console.log(`Public URL: ${clientUrl}`);
   console.log(`API URL: ${apiUrl}`);
-  console.log('Tip: set PUBLIC_HOST manually if another IPv4 is needed.');
+  console.log('Tip: edit .env.public or set PUBLIC_HOST manually if another host is needed.');
 }
 
 function run(command, args, options = {}) {
