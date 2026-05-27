@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="UAHEAT square logo with lighter dark background and white outline">
+  <title>UAHEAT square logo - lighter dark background with white outline</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2A3840"/>
+      <stop offset="1" stop-color="#1E2A31"/>
+    </linearGradient>
+    <linearGradient id="innerGlow" x1="256" y1="64" x2="256" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#31444D" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#121A1F" stop-opacity="0.12"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="5" stdDeviation="10" flood-color="#000000" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <!-- subtle white outline so the icon stands out on dark browser UI -->
+  <rect x="8" y="8" width="496" height="496" rx="96" fill="none" stroke="#FFFFFF" stroke-width="12"/>
+
+  <!-- main icon body -->
+  <g filter="url(#softShadow)">
+    <rect x="18" y="18" width="476" height="476" rx="88" fill="url(#bg)"/>
+    
+    <rect x="34" y="34" width="444" height="444" rx="72" fill="url(#innerGlow)" opacity="0.65"/>
+  </g>
+
+  <!-- UA lettering -->
+  <g transform="matrix(0.873 0 0 0.873 10.2 80.8)" fill="#DCA92F">
+    <path d="M250.9,160.8c0,27.3,0.9,54.6-0.3,81.8c-1.1,26-8.6,50.3-26.6,70.1c-17.1,18.9-38.6,29.7-63.7,33.7  c-23,3.7-45.6,1.7-67.1-6.6c-33.1-12.8-53.5-37.4-62.4-71.7c-4.3-16.7-4.9-33.8-4.9-50.9c0-44.4,0-88.9,0-133.3c0-2.4-0.1-4.7,0.1-7  c1.2-15.9,7.7-23.2,26.2-23.7c14.9-0.4,24.7,10,24.8,25.4c0.2,46.6,0.1,93.1,0.2,139.7c0,11.5,0.2,22.9,2.6,34.4  c5.2,25.4,21.8,42.6,47.5,46.4c21.9,3.2,42.7-0.2,57.8-18.2c9.8-11.7,13.7-26.2,15.2-41.3c1.4-14.1,0.8-28.2,0.9-42.3  c0.1-38.3-0.1-76.6,0.1-115c0-7.6-0.6-15.4,5.8-21.6c8.5-8.2,18.5-7.8,28.8-5.3c10.4,2.6,14.9,10.7,15.1,20.3  c0.5,28.4,0.2,56.9,0.2,85.3C251.1,160.8,251,160.8,250.9,160.8z"/>
+    <path d="M404.7,52.3c16.2-0.9,27.2,6.5,33,20.7c14.7,36.3,28.8,72.8,43.3,109.2c12.3,30.9,24.6,61.7,37,92.5  c5.8,14.4,11.7,28.6,17.4,43c5.7,14.3-1.7,25.9-17.1,27c-4.7,0.3-9.4,0.1-14-1.3c-7.1-2-12.3-5.5-15.5-12.9  c-7.2-16.6-13.6-33.5-20.2-50.3c-1.7-4.4-3.6-6.3-8.5-6.2c-36.4,0.2-72.9,0.2-109.3,0.1c-4.7,0-7.4,0.9-9.2,6.1  c-5.7,16.1-12.3,32-18.6,47.9c-6.2,15.7-25.8,22.3-40.5,13.6c-7.7-4.6-10.5-13.5-7.1-22.1c13.5-34.5,27.7-68.8,40.2-103.7  c16.8-46.9,36.9-92.4,54.3-139.1C375.2,62.6,386,50.6,404.7,52.3z M405.1,113.4c-0.6,0-1.2,0.1-1.8,0.1  c-4.4,12.3-8.8,24.6-13.3,36.9c-9,24.4-18,48.7-27.1,73c-1.7,4.5-0.3,5.7,4.3,5.7c24.9-0.2,49.8-0.2,74.7,0c5.6,0,6.2-1.5,4.3-6.5  c-8.7-22.5-17-45.2-25.4-67.9C415.5,140.9,410.3,127.2,405.1,113.4z"/>
+  </g>
+
+  <!-- flame accent -->
+  <path d="M392 92C410 114 421 137 421 162C421 190 405 212 384 224C391 206 386 187 371 167C357 149 352 127 363 104C368 94 374 86 382 78C384 83 388 88 392 92Z" fill="#F4F4F4" opacity="0.94"/>
+  <path d="M427 111C439 128 446 145 446 164C446 185 435 201 419 212C424 197 421 182 410 167C400 154 397 137 405 121C410 112 416 105 423 99C424 103 425 107 427 111Z" fill="#48C2FF" opacity="0.95"/>
+</svg>
