@@ -4,6 +4,7 @@ import {
   stageStatusLabels,
   stageStatusOptions,
 } from '../../connectionContent';
+import { apiUrl } from '../../api';
 
 function getToday() {
   return new Date().toISOString().slice(0, 10);
@@ -18,11 +19,15 @@ function getStageStatusOptions(stage, draft) {
 }
 
 export function ApplicationStagesPanel({
+  deletingStageFileId,
   getStageDraft,
+  onDeleteStageFinalFile,
   onSaveStage,
+  onUploadStageFinalFile,
   savingStageId,
   selectedApplication,
   stageDrafts,
+  uploadingStageFileId,
   updateStageDraft,
 }) {
   const [expandedStageIds, setExpandedStageIds] = useState(() => new Set());
@@ -162,6 +167,43 @@ export function ApplicationStagesPanel({
                         value={draft.completedAt}
                       />
                     </label>
+
+                    <div className="field-block stage-final-file">
+                      <span>Остаточний файл етапу</span>
+                      <div className="stage-final-file__control">
+                        <label className="secondary-button file-button">
+                          {uploadingStageFileId === stage.id ? '...' : 'Файл'}
+                          <input
+                            disabled={uploadingStageFileId === stage.id}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              event.target.value = '';
+                              onUploadStageFinalFile(stage, file);
+                            }}
+                            type="file"
+                          />
+                        </label>
+                        {stage.finalFile ? (
+                          <a className="stage-final-file__name" href={apiUrl(`/api/application-stage-files/${stage.id}`)}>
+                            {stage.finalFile.originalName}
+                          </a>
+                        ) : (
+                          <span className="stage-final-file__empty">Не додано</span>
+                        )}
+                        {stage.finalFile ? (
+                          <button
+                            aria-label="Прибрати файл"
+                            className="icon-danger-button"
+                            disabled={deletingStageFileId === stage.id}
+                            onClick={() => onDeleteStageFinalFile(stage)}
+                            title="Прибрати файл"
+                            type="button"
+                          >
+                            ×
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
 
                   <label className="field-block">

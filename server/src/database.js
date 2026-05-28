@@ -21,7 +21,7 @@ fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(generatedDocumentsDir, { recursive: true });
 
-const schemaVersion = 8;
+const schemaVersion = 9;
 const db = new Database(databasePath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -277,6 +277,10 @@ db.exec(`
     started_at TEXT,
     completed_at TEXT,
     public_note TEXT NOT NULL,
+    final_file_stored_name TEXT NOT NULL DEFAULT '',
+    final_file_original_name TEXT NOT NULL DEFAULT '',
+    final_file_mime_type TEXT NOT NULL DEFAULT '',
+    final_file_size INTEGER NOT NULL DEFAULT 0,
     is_visible INTEGER NOT NULL DEFAULT 1,
     is_optional INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
@@ -618,6 +622,10 @@ addColumnIfMissing('stations', 'region', "TEXT NOT NULL DEFAULT ''");
 function migrateApplicationStagesToV5() {
   addColumnIfMissing('stage_templates', 'is_optional', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('application_stages', 'is_optional', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('application_stages', 'final_file_stored_name', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('application_stages', 'final_file_original_name', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('application_stages', 'final_file_mime_type', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('application_stages', 'final_file_size', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('email_notifications', 'notification_type', "TEXT NOT NULL DEFAULT 'stage_updated'");
   addColumnIfMissing('email_notifications', 'payload', "TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing('email_notifications', 'send_error', "TEXT NOT NULL DEFAULT ''");
@@ -1592,6 +1600,10 @@ const listApplicationStagesStatement = db.prepare(`
     started_at AS startedAt,
     completed_at AS completedAt,
     public_note AS publicNote,
+    final_file_stored_name AS finalFileStoredName,
+    final_file_original_name AS finalFileOriginalName,
+    final_file_mime_type AS finalFileMimeType,
+    final_file_size AS finalFileSize,
     is_visible AS isVisible,
     is_optional AS isOptional,
     created_at AS createdAt,
@@ -1615,6 +1627,10 @@ const getApplicationStageByIdStatement = db.prepare(`
     started_at AS startedAt,
     completed_at AS completedAt,
     public_note AS publicNote,
+    final_file_stored_name AS finalFileStoredName,
+    final_file_original_name AS finalFileOriginalName,
+    final_file_mime_type AS finalFileMimeType,
+    final_file_size AS finalFileSize,
     is_visible AS isVisible,
     is_optional AS isOptional,
     created_at AS createdAt,
@@ -1632,6 +1648,26 @@ const updateApplicationStageStatement = db.prepare(`
       completed_at = ?,
       public_note = ?,
       is_visible = ?,
+      updated_at = ?
+  WHERE id = ? AND application_id = ?
+`);
+
+const updateApplicationStageFinalFileStatement = db.prepare(`
+  UPDATE application_stages
+  SET final_file_stored_name = ?,
+      final_file_original_name = ?,
+      final_file_mime_type = ?,
+      final_file_size = ?,
+      updated_at = ?
+  WHERE id = ? AND application_id = ?
+`);
+
+const clearApplicationStageFinalFileStatement = db.prepare(`
+  UPDATE application_stages
+  SET final_file_stored_name = '',
+      final_file_original_name = '',
+      final_file_mime_type = '',
+      final_file_size = 0,
       updated_at = ?
   WHERE id = ? AND application_id = ?
 `);
@@ -1999,6 +2035,11 @@ const getGeneratedDocumentByIdStatement = db.prepare(`
   WHERE id = ?
 `);
 
+const deleteGeneratedDocumentStatement = db.prepare(`
+  DELETE FROM generated_documents
+  WHERE id = ?
+`);
+
 const insertAuditLogStatement = db.prepare(`
   INSERT INTO audit_log (
     actor_user_id,
@@ -2161,6 +2202,13 @@ function mapApplicationStage(row) {
     startedAt: row.startedAt,
     completedAt: row.completedAt,
     publicNote: row.publicNote,
+    finalFile: row.finalFileStoredName
+      ? {
+        originalName: row.finalFileOriginalName,
+        mimeType: row.finalFileMimeType,
+        size: row.finalFileSize,
+      }
+      : null,
     isVisible: Boolean(row.isVisible),
     isOptional: Boolean(row.isOptional),
     createdAt: row.createdAt,
@@ -2532,6 +2580,49 @@ function createApplicationEmailNotification({
   );
 }
 
+function createStationEmailNotification({
+  application,
+  body,
+  notificationType,
+  payload = {},
+  subject,
+  timestamp = getTimestamp(),
+}) {
+  const stationEmail = String(application.station?.email ?? application.stationEmail ?? '').trim();
+  const hasEmail = stationEmail.includes('@');
+
+  insertEmailNotificationStatement.run(
+    application.id,
+    null,
+    stationEmail,
+    application.stationName || 'Менеджер станції',
+    subject,
+    body,
+    notificationType,
+    safeJson({
+      applicationId: application.id,
+      applicationNumber: application.applicationNumber,
+      recipientRole: 'manager',
+      ...payload,
+    }),
+    hasEmail ? 'prepared' : 'skipped',
+    timestamp,
+  );
+}
+
+function createManagerNotification(application, subject, lines, notificationType, timestamp) {
+  createStationEmailNotification({
+    application,
+    notificationType,
+    subject,
+    body: [
+      ...lines,
+      'Це службове сповіщення для менеджера. Перейдіть у кабінет на сайті, щоб переглянути деталі.',
+    ].filter(Boolean).join('\n'),
+    timestamp,
+  });
+}
+
 function createApplicationSubmittedNotification(application, timestamp) {
   createApplicationEmailNotification({
     application,
@@ -2547,6 +2638,18 @@ function createApplicationSubmittedNotification(application, timestamp) {
     payload: { status: application.status },
     timestamp,
   });
+  createManagerNotification(
+    application,
+    'Нова заявка на приєднання',
+    [
+      `Подано нову заявку №${application.applicationNumber}.`,
+      `Заявник: ${application.applicantFullName}`,
+      `Email: ${application.email}`,
+      `Об’єкт: ${application.objectAddress}`,
+    ],
+    'manager_application_submitted',
+    timestamp,
+  );
 }
 
 function createApplicationStatusNotification(application, comment, timestamp) {
@@ -2594,6 +2697,16 @@ function createPendingResubmittedNotification(application, timestamp) {
     payload: { status: application.status },
     timestamp,
   });
+  createManagerNotification(
+    application,
+    'Заявку повторно подано після уточнення',
+    [
+      `Заявку №${application.applicationNumber} повторно подано після уточнення.`,
+      `Заявник: ${application.applicantFullName}`,
+    ],
+    'manager_pending_resubmitted',
+    timestamp,
+  );
 }
 
 function createCustomerAccessNotification(application, user, temporaryPassword, timestamp) {
@@ -2645,6 +2758,25 @@ function createChatMessageNotification(application, actor, body, files, timestam
     },
     timestamp,
   });
+}
+
+function createManagerChatMessageNotification(application, actor, body, files, timestamp) {
+  const attachmentCount = files.length;
+  const authorName = actor?.fullName ?? actor?.full_name ?? 'Замовник';
+  const preview = String(body ?? '').trim().slice(0, 500);
+
+  createManagerNotification(
+    application,
+    'Нове повідомлення від замовника',
+    [
+      `У заявці №${application.applicationNumber} є нове повідомлення.`,
+      `Автор: ${authorName}.`,
+      preview ? `Повідомлення: ${preview}` : '',
+      attachmentCount ? `Додано файлів: ${attachmentCount}.` : '',
+    ],
+    'manager_chat_message_created',
+    timestamp,
+  );
 }
 
 function shouldCreateStageNotification(previousStage, updatedStage) {
@@ -3073,8 +3205,6 @@ const registerCustomerApplicationTransaction = db.transaction((input, metadata =
     timestamp,
     toStatus: applicationInput.status,
   });
-
-  createApplicationSubmittedNotification(getApplicationById(applicationId), timestamp);
 
   getActiveStageTemplates().forEach((stage) => {
     insertApplicationStageStatement.run(
@@ -4411,6 +4541,10 @@ const createMessageTransaction = db.transaction((chatId, userId, body, files, ac
     const application = getApplicationById(applicationLink.id);
     createChatMessageNotification(application, actor, body, files, createdAt);
     notificationApplicationId = application.id;
+  } else if (applicationLink && actor?.role === 'customer') {
+    const application = getApplicationById(applicationLink.id);
+    createManagerChatMessageNotification(application, actor, body, files, createdAt);
+    notificationApplicationId = application.id;
   }
 
   return { messageId, notificationApplicationId };
@@ -4510,6 +4644,115 @@ export function createGeneratedDocumentRecord(input, actor) {
 export function getGeneratedDocumentById(documentId) {
   const row = getGeneratedDocumentByIdStatement.get(documentId);
   return row ? mapGeneratedDocument(row) : null;
+}
+
+export function deleteGeneratedDocument(documentId, actor) {
+  const document = getGeneratedDocumentById(documentId);
+
+  if (!document) {
+    return null;
+  }
+
+  deleteGeneratedDocumentStatement.run(documentId);
+
+  recordAuditLog({
+    actor,
+    stationId: document.stationId,
+    entityType: 'generated_document',
+    entityId: document.id,
+    action: 'delete',
+    summary: `Видалено згенерований документ "${document.title}".`,
+    before: document,
+  });
+
+  return document;
+}
+
+export function setApplicationStageFinalFile(applicationId, stageId, file, actor) {
+  const currentStage = getApplicationStageByIdStatement.get(stageId, applicationId);
+
+  if (!currentStage) {
+    return null;
+  }
+
+  const timestamp = getTimestamp();
+  updateApplicationStageFinalFileStatement.run(
+    file.filename,
+    file.originalname,
+    file.mimetype || 'application/octet-stream',
+    file.size,
+    timestamp,
+    stageId,
+    applicationId,
+  );
+  updateApplicationTouchedStatement.run(timestamp, applicationId);
+  const application = getApplicationById(applicationId);
+  const updatedStage = application.stages.find((stage) => stage.id === stageId);
+
+  recordAuditLog({
+    actor,
+    stationId: application.stationId,
+    entityType: 'application_stage',
+    entityId: stageId,
+    action: 'upload_final_file',
+    summary: `Додано остаточний файл етапу "${updatedStage.title}" у заяві ${application.applicationNumber}.`,
+    before: mapApplicationStage(currentStage),
+    after: updatedStage,
+  });
+
+  return {
+    application,
+    previousFileName: currentStage.finalFileStoredName || '',
+  };
+}
+
+export function clearApplicationStageFinalFile(applicationId, stageId, actor) {
+  const currentStage = getApplicationStageByIdStatement.get(stageId, applicationId);
+
+  if (!currentStage) {
+    return null;
+  }
+
+  const timestamp = getTimestamp();
+  clearApplicationStageFinalFileStatement.run(timestamp, stageId, applicationId);
+  updateApplicationTouchedStatement.run(timestamp, applicationId);
+  const application = getApplicationById(applicationId);
+
+  recordAuditLog({
+    actor,
+    stationId: application.stationId,
+    entityType: 'application_stage',
+    entityId: stageId,
+    action: 'delete_final_file',
+    summary: `Видалено остаточний файл етапу "${currentStage.title}" у заяві ${application.applicationNumber}.`,
+    before: mapApplicationStage(currentStage),
+  });
+
+  return {
+    application,
+    previousFileName: currentStage.finalFileStoredName || '',
+  };
+}
+
+export function getApplicationStageFinalFile(stageId) {
+  const row = db.prepare(`
+    SELECT
+      application_stages.id AS stageId,
+      application_stages.application_id AS applicationId,
+      application_stages.title,
+      application_stages.final_file_stored_name AS storedName,
+      application_stages.final_file_original_name AS originalName,
+      application_stages.final_file_mime_type AS mimeType,
+      application_stages.final_file_size AS size
+    FROM application_stages
+    WHERE id = ?
+  `).get(stageId);
+
+  if (!row?.storedName) {
+    return null;
+  }
+
+  return row;
 }
 
 export function canAccessGeneratedDocument(user, document) {

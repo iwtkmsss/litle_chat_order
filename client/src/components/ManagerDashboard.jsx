@@ -190,6 +190,9 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
   const [deletingUserId, setDeletingUserId] = useState(null);
   const [generatingDocumentType, setGeneratingDocumentType] = useState('');
   const [retryingNotificationId, setRetryingNotificationId] = useState(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState(null);
+  const [uploadingStageFileId, setUploadingStageFileId] = useState(null);
+  const [deletingStageFileId, setDeletingStageFileId] = useState(null);
   const [activeDashboardPage, setActiveDashboardPage] = useState('registry');
   const [activeModal, setActiveModal] = useState(null);
 
@@ -554,6 +557,79 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
     }
   }
 
+  async function handleDeleteGeneratedDocument(document) {
+    const confirmed = window.confirm(`Прибрати документ "${document.originalName}"?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingDocumentId(document.id);
+    setPanelMessage('');
+
+    try {
+      await api.deleteGeneratedDocument(document.id);
+      setPanelMessage('Документ прибрано.');
+      await loadDashboard({ silent: true });
+    } catch (actionError) {
+      setPanelMessage(actionError.message);
+    } finally {
+      setDeletingDocumentId(null);
+    }
+  }
+
+  async function handleUploadStageFinalFile(stage, file) {
+    if (!selectedApplication || !file) {
+      return;
+    }
+
+    setUploadingStageFileId(stage.id);
+    setPanelMessage('');
+
+    try {
+      const response = await api.uploadStageFinalFile(selectedApplication.id, stage.id, file);
+      setApplications((current) =>
+        current.map((application) =>
+          application.id === response.application.id ? response.application : application,
+        ),
+      );
+      setPanelMessage('Остаточний файл етапу додано.');
+    } catch (actionError) {
+      setPanelMessage(actionError.message);
+    } finally {
+      setUploadingStageFileId(null);
+    }
+  }
+
+  async function handleDeleteStageFinalFile(stage) {
+    if (!selectedApplication) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Прибрати остаточний файл етапу "${stage.title}"?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingStageFileId(stage.id);
+    setPanelMessage('');
+
+    try {
+      const response = await api.deleteStageFinalFile(selectedApplication.id, stage.id);
+      setApplications((current) =>
+        current.map((application) =>
+          application.id === response.application.id ? response.application : application,
+        ),
+      );
+      setPanelMessage('Остаточний файл етапу прибрано.');
+    } catch (actionError) {
+      setPanelMessage(actionError.message);
+    } finally {
+      setDeletingStageFileId(null);
+    }
+  }
+
   async function handleRetryEmailNotification(notificationId) {
     if (!selectedApplication) {
       return;
@@ -801,6 +877,8 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
             generatingDocumentType={generatingDocumentType}
             getGeneratedDocumentOptions={getGeneratedDocumentOptions}
             isAdmin={isAdmin}
+            deletingDocumentId={deletingDocumentId}
+            onDeleteGeneratedDocument={handleDeleteGeneratedDocument}
             onGenerateDocument={handleGenerateDocument}
             onEmailSent={() => loadDashboard({ silent: true })}
             selectedApplication={selectedApplication}
@@ -808,10 +886,14 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
 
           <ApplicationStagesPanel
             getStageDraft={getStageDraft}
+            deletingStageFileId={deletingStageFileId}
             onSaveStage={handleSaveStage}
+            onDeleteStageFinalFile={handleDeleteStageFinalFile}
+            onUploadStageFinalFile={handleUploadStageFinalFile}
             savingStageId={savingStageId}
             selectedApplication={selectedApplication}
             stageDrafts={stageDrafts}
+            uploadingStageFileId={uploadingStageFileId}
             updateStageDraft={updateStageDraft}
           />
 

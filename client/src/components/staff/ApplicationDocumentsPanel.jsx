@@ -33,10 +33,12 @@ function getNotificationStatusTone(notification) {
 }
 
 export function ApplicationDocumentsPanel({
+  deletingDocumentId,
   generatingDocumentType,
   getGeneratedDocumentOptions,
   isAdmin,
   onGenerateDocument,
+  onDeleteGeneratedDocument,
   onEmailSent,
   selectedApplication,
 }) {
@@ -135,10 +137,22 @@ export function ApplicationDocumentsPanel({
           {selectedApplication.generatedDocuments.length === 0 ? (
             <p className="muted-copy">Згенерованих документів ще немає.</p>
           ) : selectedApplication.generatedDocuments.map((document) => (
-            <article className="email-log-item" key={document.id}>
-              <strong>{document.title}</strong>
-              <a href={apiUrl(`/api/generated-documents/${document.id}`)}>{document.originalName}</a>
-              <small>{formatDateTime(document.createdAt)}</small>
+            <article className="email-log-item document-log-item" key={document.id}>
+              <div>
+                <strong>{document.title}</strong>
+                <a href={apiUrl(`/api/generated-documents/${document.id}`)}>{document.originalName}</a>
+                <small>{formatDateTime(document.createdAt)}</small>
+              </div>
+              <button
+                aria-label="Прибрати документ"
+                className="icon-danger-button"
+                disabled={deletingDocumentId === document.id}
+                onClick={() => onDeleteGeneratedDocument(document)}
+                title="Прибрати документ"
+                type="button"
+              >
+                ×
+              </button>
             </article>
           ))}
         </div>

@@ -258,6 +258,28 @@ export const api = {
     });
   },
 
+  deleteGeneratedDocument(documentId) {
+    return request(`/api/generated-documents/${documentId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  uploadStageFinalFile(applicationId, stageId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return request(`/api/applications/${applicationId}/stages/${stageId}/final-file`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  deleteStageFinalFile(applicationId, stageId) {
+    return request(`/api/applications/${applicationId}/stages/${stageId}/final-file`, {
+      method: 'DELETE',
+    });
+  },
+
   listChats() {
     return request('/api/chats');
   },

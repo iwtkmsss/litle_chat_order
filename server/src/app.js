@@ -20,12 +20,14 @@ import {
   createCustomApplicationEmailNotification,
   deleteApplication,
   deleteChat,
+  deleteGeneratedDocument,
   deleteUser,
   findUserByFullName,
   getApplicationById,
   getAttachmentById,
   getChatById,
   getEmailNotificationById,
+  getApplicationStageFinalFile,
   getGeneratedDocumentById,
   getPendingApplicationSession,
   getSessionUser,
@@ -50,6 +52,8 @@ import {
   removePendingApplicationSession,
   replaceChatAccess,
   resubmitPendingApplication,
+  setApplicationStageFinalFile,
+  clearApplicationStageFinalFile,
   revealCustomerAccessCredentials,
   updateApplication,
   updateApplicationStage,
@@ -1624,6 +1628,111 @@ export function createApp({ clientUrl }) {
     }
 
     return response.download(path.join(generatedDocumentsDir, document.storedName), document.originalName);
+  });
+
+  app.delete('/api/generated-documents/:documentId', requireAuth, requireStaff, async (request, response) => {
+    const documentId = Number(request.params.documentId);
+
+    if (!Number.isInteger(documentId) || documentId < 1) {
+      return sendError(response, 400, 'Некоректний ідентифікатор документа.');
+    }
+
+    const document = getGeneratedDocumentById(documentId);
+
+    if (!document) {
+      return sendError(response, 404, 'Документ не знайдено.');
+    }
+
+    if (!canAccessGeneratedDocument(request.auth.user, document)) {
+      return sendError(response, 403, 'Доступ до документа заборонено.');
+    }
+
+    const deletedDocument = deleteGeneratedDocument(documentId, request.auth.user);
+
+    if (!deletedDocument) {
+      return sendError(response, 404, 'Документ не знайдено.');
+    }
+
+    await fs.rm(path.join(generatedDocumentsDir, deletedDocument.storedName), { force: true });
+    return response.status(204).end();
+  });
+
+  app.post(
+    '/api/applications/:applicationId/stages/:stageId/final-file',
+    requireAuth,
+    requireStaff,
+    requireApplicationAccess,
+    upload.single('file'),
+    async (request, response) => {
+      try {
+        if (!request.file) {
+          return sendError(response, 400, 'Додайте файл етапу.');
+        }
+
+        const stageId = validateInteger(request.params.stageId, 'Ідентифікатор етапу', { min: 1 });
+        const result = setApplicationStageFinalFile(
+          request.application.id,
+          stageId,
+          request.file,
+          request.auth.user,
+        );
+
+        if (!result) {
+          await removeUploadedFiles([request.file]);
+          return sendError(response, 404, 'Етап не знайдено.');
+        }
+
+        if (result.previousFileName) {
+          await removeStoredFiles([result.previousFileName]);
+        }
+
+        return response.json({ application: result.application });
+      } catch (error) {
+        await removeUploadedFiles(request.file ? [request.file] : []);
+        return sendError(response, 400, error.message);
+      }
+    },
+  );
+
+  app.delete(
+    '/api/applications/:applicationId/stages/:stageId/final-file',
+    requireAuth,
+    requireStaff,
+    requireApplicationAccess,
+    async (request, response) => {
+      const stageId = validateInteger(request.params.stageId, 'Ідентифікатор етапу', { min: 1 });
+      const result = clearApplicationStageFinalFile(request.application.id, stageId, request.auth.user);
+
+      if (!result) {
+        return sendError(response, 404, 'Етап не знайдено.');
+      }
+
+      if (result.previousFileName) {
+        await removeStoredFiles([result.previousFileName]);
+      }
+
+      return response.json({ application: result.application });
+    },
+  );
+
+  app.get('/api/application-stage-files/:stageId', requireAuth, (request, response) => {
+    const stageId = Number(request.params.stageId);
+
+    if (!Number.isInteger(stageId) || stageId < 1) {
+      return sendError(response, 400, 'Некоректний ідентифікатор етапу.');
+    }
+
+    const file = getApplicationStageFinalFile(stageId);
+
+    if (!file) {
+      return sendError(response, 404, 'Файл етапу не знайдено.');
+    }
+
+    if (!canAccessApplication(request.auth.user, file.applicationId)) {
+      return sendError(response, 403, 'Доступ до файлу заборонено.');
+    }
+
+    return response.download(path.join(uploadsDir, file.storedName), file.originalName);
   });
 
   app.get('/api/chats', requireAuth, (request, response) => {
