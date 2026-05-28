@@ -21,7 +21,7 @@ fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(generatedDocumentsDir, { recursive: true });
 
-const schemaVersion = 7;
+const schemaVersion = 8;
 const db = new Database(databasePath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -339,6 +339,7 @@ db.exec(`
     notification_type TEXT NOT NULL DEFAULT 'stage_updated',
     payload TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL CHECK (status IN ('prepared', 'skipped', 'sent')),
+    send_error TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
     FOREIGN KEY (stage_id) REFERENCES application_stages(id) ON DELETE SET NULL
@@ -619,6 +620,7 @@ function migrateApplicationStagesToV5() {
   addColumnIfMissing('application_stages', 'is_optional', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('email_notifications', 'notification_type', "TEXT NOT NULL DEFAULT 'stage_updated'");
   addColumnIfMissing('email_notifications', 'payload', "TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing('email_notifications', 'send_error', "TEXT NOT NULL DEFAULT ''");
 
   db.prepare(`
     UPDATE application_stages
@@ -1728,6 +1730,7 @@ const listEmailNotificationsStatement = db.prepare(`
     notification_type AS notificationType,
     payload,
     status,
+    send_error AS sendError,
     created_at AS createdAt
   FROM email_notifications
   WHERE application_id = ?
@@ -1746,6 +1749,7 @@ const listPreparedEmailNotificationsStatement = db.prepare(`
     notification_type AS notificationType,
     payload,
     status,
+    send_error AS sendError,
     created_at AS createdAt
   FROM email_notifications
   WHERE application_id = ?
@@ -1756,8 +1760,33 @@ const listPreparedEmailNotificationsStatement = db.prepare(`
 
 const markEmailNotificationSentStatement = db.prepare(`
   UPDATE email_notifications
-  SET status = 'sent'
-  WHERE id = ? AND status = 'prepared'
+  SET status = 'sent',
+      send_error = ''
+  WHERE id = ? AND status != 'skipped'
+`);
+
+const markEmailNotificationErrorStatement = db.prepare(`
+  UPDATE email_notifications
+  SET send_error = ?
+  WHERE id = ? AND status != 'skipped'
+`);
+
+const getEmailNotificationByIdStatement = db.prepare(`
+  SELECT
+    id,
+    application_id AS applicationId,
+    stage_id AS stageId,
+    recipient_email AS recipientEmail,
+    recipient_name AS recipientName,
+    subject,
+    body,
+    notification_type AS notificationType,
+    payload,
+    status,
+    send_error AS sendError,
+    created_at AS createdAt
+  FROM email_notifications
+  WHERE id = ?
 `);
 
 const latestCustomerAccessNotificationStatement = db.prepare(`
@@ -1772,6 +1801,7 @@ const latestCustomerAccessNotificationStatement = db.prepare(`
     notification_type AS notificationType,
     payload,
     status,
+    send_error AS sendError,
     created_at AS createdAt
   FROM email_notifications
   WHERE application_id = ?
@@ -2178,6 +2208,7 @@ function mapEmailNotification(row, { redactSensitive = true } = {}) {
     notificationType: row.notificationType,
     payload,
     status: row.status,
+    sendError: row.sendError ?? '',
     createdAt: row.createdAt,
   };
 }
@@ -2501,6 +2532,39 @@ function createApplicationEmailNotification({
   );
 }
 
+function createApplicationSubmittedNotification(application, timestamp) {
+  createApplicationEmailNotification({
+    application,
+    notificationType: 'application_submitted',
+    subject: 'Заяву на приєднання успішно подано',
+    body: [
+      `Вашу заяву №${application.applicationNumber} успішно подано.`,
+      `Станція/компанія: ${application.stationName}`,
+      `Об’єкт: ${application.objectAddress}`,
+      application.objectRegion ? `Область: ${application.objectRegion}` : '',
+      'Заява очікує перевірки оператором. Стежте за оновленнями у кабінеті заявки на сайті.',
+    ].filter(Boolean).join('\n'),
+    payload: { status: application.status },
+    timestamp,
+  });
+}
+
+function createApplicationStatusNotification(application, comment, timestamp) {
+  createApplicationEmailNotification({
+    application,
+    notificationType: 'application_status_updated',
+    subject: 'Оновлено статус вашої заявки',
+    body: [
+      `За вашою заявою №${application.applicationNumber} оновлено статус.`,
+      `Поточний статус: ${APPLICATION_STATUS_LABELS[application.status] ?? application.status}.`,
+      comment ? `Коментар: ${comment}` : '',
+      'Перейдіть у кабінет заявки на сайті, щоб переглянути деталі.',
+    ].filter(Boolean).join('\n'),
+    payload: { status: application.status, comment },
+    timestamp,
+  });
+}
+
 function createPendingClarificationNotification(application, comment, timestamp) {
   createApplicationEmailNotification({
     application,
@@ -2513,6 +2577,21 @@ function createPendingClarificationNotification(application, comment, timestamp)
       'Email-повідомлення сформовано для майбутньої відправки.',
     ].filter(Boolean).join('\n'),
     payload: { status: 'needs_clarification' },
+    timestamp,
+  });
+}
+
+function createPendingResubmittedNotification(application, timestamp) {
+  createApplicationEmailNotification({
+    application,
+    notificationType: 'pending_resubmitted',
+    subject: 'Заяву повторно подано після уточнення',
+    body: [
+      `Вашу заяву №${application.applicationNumber} повторно подано після уточнення.`,
+      'Вона знову очікує перевірки оператором.',
+      'Стежте за оновленнями у кабінеті заявки на сайті.',
+    ].join('\n'),
+    payload: { status: application.status },
     timestamp,
   });
 }
@@ -2538,6 +2617,31 @@ function createCustomerAccessNotification(application, user, temporaryPassword, 
       userId: user.id,
       login: user.login || application.email,
       ...(temporaryPassword ? { temporaryPassword } : {}),
+    },
+    timestamp,
+  });
+}
+
+function createChatMessageNotification(application, actor, body, files, timestamp) {
+  const attachmentCount = files.length;
+  const authorName = actor?.fullName ?? actor?.full_name ?? 'Працівник сервісу';
+  const preview = String(body ?? '').trim().slice(0, 500);
+
+  createApplicationEmailNotification({
+    application,
+    notificationType: 'chat_message_created',
+    subject: 'Нове повідомлення у кабінеті заявки',
+    body: [
+      `У кабінеті вашої заявки №${application.applicationNumber} є нове повідомлення.`,
+      `Автор: ${authorName}.`,
+      preview ? `Повідомлення: ${preview}` : '',
+      attachmentCount ? `Додано файлів: ${attachmentCount}.` : '',
+      'Перейдіть на сайт, щоб відповісти або переглянути деталі.',
+    ].filter(Boolean).join('\n'),
+    payload: {
+      authorId: actor?.id ?? null,
+      authorRole: actor?.role ?? '',
+      attachmentCount,
     },
     timestamp,
   });
@@ -2699,6 +2803,168 @@ export function listPreparedEmailNotifications(applicationId) {
     .map((row) => mapEmailNotification(row, { redactSensitive: false }));
 }
 
+export function getEmailNotificationById(notificationId) {
+  const row = getEmailNotificationByIdStatement.get(notificationId);
+  return row ? mapEmailNotification(row, { redactSensitive: false }) : null;
+}
+
+function createEmailTemplate(id, label, subject, lines) {
+  return {
+    id,
+    label,
+    subject,
+    body: lines.filter(Boolean).join('\n'),
+  };
+}
+
+export function listApplicationEmailTemplates(applicationId) {
+  const application = getApplicationById(applicationId);
+
+  if (!application) {
+    return null;
+  }
+
+  const latestAccessNotification = latestCustomerAccessNotificationStatement.get(applicationId);
+  const accessPayload = latestAccessNotification
+    ? mapEmailNotification(latestAccessNotification, { redactSensitive: false }).payload
+    : {};
+  const latestClarification = (application.statusHistory ?? []).find(
+    (entry) => entry.toStatus === 'needs_clarification' && entry.comment,
+  );
+  const templates = [
+    createEmailTemplate(
+      'application_submitted',
+      'Підтвердження подачі заявки',
+      'Заяву на приєднання успішно подано',
+      [
+        `Вашу заяву №${application.applicationNumber} успішно подано.`,
+        `Станція/компанія: ${application.stationName}`,
+        `Об’єкт: ${application.objectAddress}`,
+        application.objectRegion ? `Область: ${application.objectRegion}` : '',
+        'Заява очікує перевірки оператором. Стежте за оновленнями у кабінеті заявки на сайті.',
+      ],
+    ),
+    createEmailTemplate(
+      'application_status_updated',
+      'Оновлення статусу заявки',
+      'Оновлено статус вашої заявки',
+      [
+        `За вашою заявою №${application.applicationNumber} оновлено статус.`,
+        `Поточний статус: ${APPLICATION_STATUS_LABELS[application.status] ?? application.status}.`,
+        'Перейдіть у кабінет заявки на сайті, щоб переглянути деталі.',
+      ],
+    ),
+    createEmailTemplate(
+      'pending_needs_clarification',
+      'Потрібно доповнити заявку',
+      'Заяву потрібно доповнити',
+      [
+        `За вашою заявою №${application.applicationNumber} потрібно уточнити дані.`,
+        latestClarification?.comment ? `Коментар оператора: ${latestClarification.comment}` : '',
+        'Перейдіть до тимчасового кабінету заявки та внесіть необхідні уточнення.',
+      ],
+    ),
+    createEmailTemplate(
+      'customer_access_prepared',
+      'Доступ до особистого кабінету',
+      'Доступ до особистого кабінету за заявкою на приєднання',
+      [
+        `Вашу заяву №${application.applicationNumber} прийнято в обробку.`,
+        'Для подальшої роботи використовуйте особистий кабінет замовника.',
+        `Логін: ${accessPayload.login || application.email}`,
+        accessPayload.temporaryPassword
+          ? `Тимчасовий пароль: ${accessPayload.temporaryPassword}`
+          : 'Використайте чинний пароль від особистого кабінету.',
+        accessPayload.temporaryPassword ? 'Після входу рекомендуємо змінити пароль.' : '',
+      ],
+    ),
+    createEmailTemplate(
+      'chat_message_created',
+      'Нагадування про повідомлення в чаті',
+      'Нове повідомлення у кабінеті заявки',
+      [
+        `У кабінеті вашої заявки №${application.applicationNumber} є нове повідомлення.`,
+        'Перейдіть на сайт, щоб відповісти або переглянути деталі.',
+      ],
+    ),
+  ];
+
+  for (const stage of application.stages ?? []) {
+    if (!stage.isVisible) {
+      continue;
+    }
+
+    templates.push(createEmailTemplate(
+      `stage_updated:${stage.id}`,
+      `Етап: ${stage.title}`,
+      'Оновлено етап за вашою заявкою на приєднання',
+      [
+        `За вашою заявкою №${application.applicationNumber} оновлено етап: «${stage.title}».`,
+        `Станція/компанія: ${application.stationName}`,
+        `Поточний стан: «${stageStatusLabels[stage.status] ?? stage.status}».`,
+        stage.expectedAt ? `Очікуваний строк: ${stage.expectedAt}` : '',
+        stage.dueAt ? `Граничний строк: ${stage.dueAt}` : '',
+        stage.completedAt ? `Дата виконання: ${stage.completedAt}` : '',
+        stage.publicNote ? `Коментар: ${stage.publicNote}` : '',
+        'Перейдіть у кабінет заявки на сайті, щоб переглянути деталі.',
+      ],
+    ));
+  }
+
+  return {
+    recipientEmail: application.email,
+    recipientName: application.applicantFullName,
+    templates,
+  };
+}
+
+export function createCustomApplicationEmailNotification(applicationId, input, actor = null) {
+  const application = getApplicationById(applicationId);
+
+  if (!application) {
+    return null;
+  }
+
+  const timestamp = getTimestamp();
+  const hasEmail = application.email.includes('@');
+  const result = insertEmailNotificationStatement.run(
+    application.id,
+    null,
+    application.email,
+    application.applicantFullName,
+    input.subject,
+    input.body,
+    input.notificationType,
+    safeJson({
+      applicationId: application.id,
+      applicationNumber: application.applicationNumber,
+      templateId: input.templateId,
+      manual: true,
+    }),
+    hasEmail ? 'prepared' : 'skipped',
+    timestamp,
+  );
+  const notification = getEmailNotificationById(Number(result.lastInsertRowid));
+
+  recordAuditLog({
+    actor,
+    stationId: application.stationId,
+    entityType: 'email_notification',
+    entityId: notification.id,
+    action: 'manual_create',
+    summary: `Адмін сформував email-лист "${notification.subject}" для заявки ${application.applicationNumber}.`,
+    after: {
+      notificationId: notification.id,
+      applicationId: application.id,
+      applicationNumber: application.applicationNumber,
+      templateId: input.templateId,
+      recipientEmail: application.email,
+    },
+  });
+
+  return notification;
+}
+
 export function markEmailNotificationSent(notificationId, actor = null) {
   const result = markEmailNotificationSentStatement.run(notificationId);
 
@@ -2713,6 +2979,12 @@ export function markEmailNotificationSent(notificationId, actor = null) {
     });
   }
 
+  return result.changes > 0;
+}
+
+export function markEmailNotificationError(notificationId, message) {
+  const text = String(message ?? '').slice(0, 1000);
+  const result = markEmailNotificationErrorStatement.run(text, notificationId);
   return result.changes > 0;
 }
 
@@ -2802,6 +3074,8 @@ const registerCustomerApplicationTransaction = db.transaction((input, metadata =
     toStatus: applicationInput.status,
   });
 
+  createApplicationSubmittedNotification(getApplicationById(applicationId), timestamp);
+
   getActiveStageTemplates().forEach((stage) => {
     insertApplicationStageStatement.run(
       applicationId,
@@ -2821,6 +3095,8 @@ const registerCustomerApplicationTransaction = db.transaction((input, metadata =
       timestamp,
     );
   });
+
+  createApplicationSubmittedNotification(getPendingApplicationById(applicationId), timestamp);
 
   recordAuditLog({
     actor: { role: 'guest', fullName: input.applicantFullName },
@@ -3325,6 +3601,8 @@ const createApplicationTransaction = db.transaction((input, actor) => {
     );
   });
 
+  createPendingResubmittedNotification(getPendingApplicationById(applicationId), timestamp);
+
   recordAuditLog({
     actor,
     stationId: input.stationId,
@@ -3471,8 +3749,12 @@ const updateApplicationTransaction = db.transaction((applicationId, input, actor
       toStatus: input.status,
     });
 
+    const updatedApplication = getApplicationById(applicationId);
+
     if (!input.customerUserId && input.status === 'needs_clarification') {
-      createPendingClarificationNotification(getApplicationById(applicationId), statusComment, timestamp);
+      createPendingClarificationNotification(updatedApplication, statusComment, timestamp);
+    } else if (input.status !== 'accepted') {
+      createApplicationStatusNotification(updatedApplication, statusComment, timestamp);
     }
   }
 
@@ -4106,7 +4388,7 @@ export function canAccessChat(user, chatId) {
   return Boolean(chatAccessStatement.get(chatId, user.id));
 }
 
-const createMessageTransaction = db.transaction((chatId, userId, body, files) => {
+const createMessageTransaction = db.transaction((chatId, userId, body, files, actor = null) => {
   const createdAt = getTimestamp();
   const result = insertMessageStatement.run(chatId, userId, body, createdAt);
   const messageId = Number(result.lastInsertRowid);
@@ -4122,11 +4404,20 @@ const createMessageTransaction = db.transaction((chatId, userId, body, files) =>
     );
   }
 
-  return messageId;
+  const applicationLink = applicationChatAccessStatement.get(chatId);
+  let notificationApplicationId = null;
+
+  if (applicationLink && actor?.role !== 'customer') {
+    const application = getApplicationById(applicationLink.id);
+    createChatMessageNotification(application, actor, body, files, createdAt);
+    notificationApplicationId = application.id;
+  }
+
+  return { messageId, notificationApplicationId };
 });
 
-export function createMessage({ chatId, userId, body, files }) {
-  return createMessageTransaction(chatId, userId, body, files);
+export function createMessage({ chatId, userId, body, files, actor = null }) {
+  return createMessageTransaction(chatId, userId, body, files, actor);
 }
 
 export function listMessages(chatId) {

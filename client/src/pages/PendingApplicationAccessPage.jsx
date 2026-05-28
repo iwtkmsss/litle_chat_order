@@ -177,7 +177,7 @@ export function PendingApplicationAccessPage({
         }}
         user={user}
       />
-      <header className="workspace-header">
+      <header className="pending-access-header surface-card">
         <div>
           <span className="section-kicker">Тимчасовий кабінет заявки</span>
           <h1>Заява {application.applicationNumber}</h1>

@@ -122,7 +122,7 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 18px;
   background:
-    radial-gradient(circle at 16% 18%, #15395b, transparent 34%),
+    radial-gradient(circle at 16% 18%, var(--color-primary), transparent 34%),
     linear-gradient(135deg, #102a43, #102a43);
   color: inherit;
   text-decoration: none;
@@ -1680,6 +1680,134 @@ p {
   background: #f9fbfc;
 }
 
+.email-status-panel {
+  border-left-color: var(--color-accent);
+}
+
+.email-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.email-log-item--status {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.email-log-item__main,
+.email-log-item__status {
+  display: grid;
+  gap: 6px;
+}
+
+.email-log-item__status {
+  justify-items: end;
+}
+
+.email-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: #edf4fb;
+  color: var(--color-primary);
+  font-size: 0.86rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.email-status-pill--success {
+  border-color: #c9e7d5;
+  background: #edf8f1;
+  color: var(--color-success);
+}
+
+.email-status-pill--error {
+  border-color: #f0c7c2;
+  background: #fff1ef;
+  color: var(--color-danger);
+}
+
+.email-status-pill--muted {
+  background: #f1f5f9;
+  color: var(--color-muted);
+}
+
+.email-send-error {
+  padding: 9px 10px;
+  border: 1px solid #f0c7c2;
+  border-radius: 10px;
+  background: #fff7f6;
+  color: var(--color-danger);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.email-template-modal {
+  display: grid;
+  gap: 16px;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: clamp(18px, 3vw, 26px);
+}
+
+.email-template-list {
+  display: grid;
+  gap: 10px;
+}
+
+.email-template-editor,
+.email-confirmation {
+  display: grid;
+  gap: 14px;
+}
+
+.email-template-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-soft);
+}
+
+.email-template-row > div {
+  display: grid;
+  gap: 5px;
+}
+
+.email-preview-box {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-soft);
+}
+
+.email-preview-box strong {
+  color: var(--color-primary);
+}
+
+.email-preview-box pre {
+  overflow: auto;
+  max-height: 320px;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  color: var(--color-text);
+}
+
 .email-log-item span,
 .email-log-item small {
   color: #69788a;
@@ -2119,6 +2247,46 @@ p {
 .lookup-result {
   display: grid;
   gap: 14px;
+}
+
+.success-card {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: clamp(22px, 3vw, 34px);
+}
+
+.success-card h2 {
+  font-size: clamp(1.45rem, 2.4vw, 1.9rem);
+  line-height: 1.15;
+}
+
+.success-card .appendix-data-grid {
+  align-items: stretch;
+}
+
+.success-card .form-actions {
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.pending-access-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  width: min(1180px, 100%);
+  margin: 0 auto 18px;
+  padding: clamp(20px, 3vw, 30px);
+}
+
+.pending-access-header h1 {
+  font-size: clamp(2rem, 4vw, 3.35rem);
+  line-height: 1.02;
+}
+
+.pending-access-header .header-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
 }
 
 .registration-section {
@@ -2634,6 +2802,20 @@ p {
     grid-template-columns: 1fr;
   }
 
+  .email-log-item--status {
+    grid-template-columns: 1fr;
+  }
+
+  .email-log-item__status,
+  .email-panel-actions {
+    justify-items: start;
+    justify-content: flex-start;
+  }
+
+  .email-template-row {
+    grid-template-columns: 1fr;
+  }
+
   .application-card {
     grid-template-columns: 1fr;
   }
@@ -2683,6 +2865,28 @@ p {
   .public-page-header h1,
   .auth-card h1 {
     font-size: clamp(1.8rem, 8vw, 2.2rem);
+  }
+
+  .success-card {
+    padding: 20px;
+  }
+
+  .success-card .form-actions {
+    justify-content: flex-start;
+  }
+
+  .pending-access-header {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+
+  .pending-access-header .header-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .pending-access-header h1 {
+    font-size: clamp(2rem, 10vw, 2.6rem);
   }
 
   .workspace-title-row {

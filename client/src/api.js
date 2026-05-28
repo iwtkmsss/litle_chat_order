@@ -234,6 +234,23 @@ export const api = {
     });
   },
 
+  retryEmailNotification(notificationId) {
+    return request(`/api/email-notifications/${notificationId}/retry`, {
+      method: 'POST',
+    });
+  },
+
+  listApplicationEmailTemplates(applicationId) {
+    return request(`/api/applications/${applicationId}/email-templates`);
+  },
+
+  sendApplicationEmail(applicationId, input) {
+    return request(`/api/applications/${applicationId}/email-notifications/send`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
   generateApplicationDocument(applicationId, documentType) {
     return request(`/api/applications/${applicationId}/documents`, {
       method: 'POST',

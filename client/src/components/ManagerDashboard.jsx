@@ -189,6 +189,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
   const [deletingApplicationId, setDeletingApplicationId] = useState(null);
   const [deletingUserId, setDeletingUserId] = useState(null);
   const [generatingDocumentType, setGeneratingDocumentType] = useState('');
+  const [retryingNotificationId, setRetryingNotificationId] = useState(null);
   const [activeDashboardPage, setActiveDashboardPage] = useState('registry');
   const [activeModal, setActiveModal] = useState(null);
 
@@ -553,6 +554,26 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
     }
   }
 
+  async function handleRetryEmailNotification(notificationId) {
+    if (!selectedApplication) {
+      return;
+    }
+
+    setRetryingNotificationId(notificationId);
+    setPanelMessage('');
+
+    try {
+      await api.retryEmailNotification(notificationId);
+      setPanelMessage('Email-лист надіслано повторно.');
+      await loadDashboard({ silent: true });
+    } catch (actionError) {
+      setPanelMessage(actionError.message);
+      await loadDashboard({ silent: true });
+    } finally {
+      setRetryingNotificationId(null);
+    }
+  }
+
   async function handleSaveSetting(key) {
     setSavingSettingKey(key);
     setPanelMessage('');
@@ -781,6 +802,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
             getGeneratedDocumentOptions={getGeneratedDocumentOptions}
             isAdmin={isAdmin}
             onGenerateDocument={handleGenerateDocument}
+            onEmailSent={() => loadDashboard({ silent: true })}
             selectedApplication={selectedApplication}
           />
 

@@ -17,6 +17,7 @@ import {
   createSession,
   createStation,
   createUser,
+  createCustomApplicationEmailNotification,
   deleteApplication,
   deleteChat,
   deleteUser,
@@ -24,6 +25,7 @@ import {
   getApplicationById,
   getAttachmentById,
   getChatById,
+  getEmailNotificationById,
   getGeneratedDocumentById,
   getPendingApplicationSession,
   getSessionUser,
@@ -32,6 +34,7 @@ import {
   getUserById,
   hasAdmin,
   listApplicationsForUser,
+  listApplicationEmailTemplates,
   listAuditLog,
   listChatsForUser,
   listDeadlineRules,
@@ -79,7 +82,7 @@ import {
 import { isValidApplicationStatus } from './applicationStatusWorkflow.js';
 import { normalizeRegion } from './ukraineRegions.js';
 import { removeStoredFiles, removeUploadedFiles, upload } from './uploads.js';
-import { sendPreparedApplicationEmails } from './mailer.js';
+import { retryEmailNotification, sendPreparedApplicationEmails } from './mailer.js';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const documentTypes = new Set(['appendix1', 'appendix2', 'appendix3', 'appendix4', 'appendix5']);
@@ -293,6 +296,15 @@ function validateMessageBody(input) {
   }
 
   return body;
+}
+
+function validateEmailTemplateSendPayload(input) {
+  return {
+    templateId: validateRequiredText(input?.templateId, 2, 120, 'Шаблон листа'),
+    notificationType: validateRequiredText(input?.templateId, 2, 120, 'Тип листа').split(':')[0],
+    subject: validateRequiredText(input?.subject, 3, 180, 'Тема листа'),
+    body: validateRequiredText(input?.body, 3, 10000, 'Текст листа'),
+  };
 }
 
 function normalizeUserIds(value, actor) {
@@ -900,6 +912,7 @@ export function createApp({ clientUrl }) {
         secure: process.env.NODE_ENV === 'production',
         maxAge: sessionDurationMs,
       });
+      await sendPreparedApplicationEmails(result.application.id, null);
 
       response.status(201).json({
         application: result.application,
@@ -1031,7 +1044,7 @@ export function createApp({ clientUrl }) {
     });
   });
 
-  app.put('/api/pending/application', (request, response) => {
+  app.put('/api/pending/application', async (request, response) => {
     if (request.auth?.user) {
       return sendError(response, 403, 'Тимчасовий доступ недоступний під час входу в основний кабінет.');
     }
@@ -1043,6 +1056,7 @@ export function createApp({ clientUrl }) {
     try {
       const payload = validatePublicRegistrationPayload(request.body);
       const application = resubmitPendingApplication(request.pendingAccess.application.id, payload);
+      await sendPreparedApplicationEmails(application.id, null);
 
       response.json({
         application,
@@ -1270,13 +1284,14 @@ export function createApp({ clientUrl }) {
     });
   });
 
-  app.post('/api/applications', requireAuth, requireStaff, (request, response) => {
+  app.post('/api/applications', requireAuth, requireStaff, async (request, response) => {
     try {
       const payload = validateApplicationPayload(request.body, request.auth.user);
       const application = createApplication({
         ...payload,
         createdBy: request.auth.user.id,
       }, request.auth.user);
+      await sendPreparedApplicationEmails(application.id, request.auth.user);
 
       response.status(201).json({
         application,
@@ -1290,13 +1305,14 @@ export function createApp({ clientUrl }) {
     }
   });
 
-  app.post('/api/customer/applications', requireAuth, requireCustomer, (request, response) => {
+  app.post('/api/customer/applications', requireAuth, requireCustomer, async (request, response) => {
     try {
       const payload = validateCustomerApplicationPayload(request.body, request.auth.user);
       const application = createApplication({
         ...payload,
         createdBy: request.auth.user.id,
       }, request.auth.user);
+      await sendPreparedApplicationEmails(application.id, request.auth.user);
       const safeApplication = getApplicationById(application.id, {
         includeHiddenStages: false,
         includePrivate: true,
@@ -1472,6 +1488,77 @@ export function createApp({ clientUrl }) {
     },
   );
 
+  app.post('/api/email-notifications/:notificationId/retry', requireAuth, requireAdmin, async (request, response) => {
+    const notificationId = Number(request.params.notificationId);
+
+    if (!Number.isInteger(notificationId) || notificationId < 1) {
+      return sendError(response, 400, 'Некоректний ідентифікатор email-повідомлення.');
+    }
+
+    const result = await retryEmailNotification(notificationId, request.auth.user);
+
+    if (!result.configured) {
+      return sendError(response, 400, result.error || 'SMTP не налаштовано.');
+    }
+
+    if (!result.sent && result.error) {
+      return sendError(response, 400, result.error);
+    }
+
+    return response.json({ ok: true });
+  });
+
+  app.get(
+    '/api/applications/:applicationId/email-templates',
+    requireAuth,
+    requireAdmin,
+    requireApplicationAccess,
+    (request, response) => {
+      const templates = listApplicationEmailTemplates(request.application.id);
+
+      if (!templates) {
+        return sendError(response, 404, 'Заяву не знайдено.');
+      }
+
+      return response.json(templates);
+    },
+  );
+
+  app.post(
+    '/api/applications/:applicationId/email-notifications/send',
+    requireAuth,
+    requireAdmin,
+    requireApplicationAccess,
+    async (request, response) => {
+      try {
+        const payload = validateEmailTemplateSendPayload(request.body);
+        const notification = createCustomApplicationEmailNotification(
+          request.application.id,
+          payload,
+          request.auth.user,
+        );
+
+        if (!notification) {
+          return sendError(response, 404, 'Заяву не знайдено.');
+        }
+
+        const result = await retryEmailNotification(notification.id, request.auth.user);
+
+        if (!result.configured) {
+          return sendError(response, 400, result.error || 'SMTP не налаштовано.');
+        }
+
+        if (!result.sent && result.error) {
+          return sendError(response, 400, result.error);
+        }
+
+        return response.status(201).json({ notification: getEmailNotificationById(notification.id) });
+      } catch (error) {
+        return sendError(response, 400, error.message);
+      }
+    },
+  );
+
   app.post(
     '/api/applications/:applicationId/documents',
     requireAuth,
@@ -1640,9 +1727,10 @@ export function createApp({ clientUrl }) {
           return sendError(response, 400, 'Додайте текст або прикріпіть хоча б один файл.');
         }
 
-        createMessage({
+        const messageResult = createMessage({
           chatId: request.chat.id,
           userId: request.auth.user.id,
+          actor: request.auth.user,
           body,
           files: uploadedFiles.map((file) => ({
             originalName: file.originalname,
@@ -1651,6 +1739,10 @@ export function createApp({ clientUrl }) {
             size: file.size,
           })),
         });
+
+        if (messageResult.notificationApplicationId) {
+          await sendPreparedApplicationEmails(messageResult.notificationApplicationId, request.auth.user);
+        }
 
         response.status(201).json({
           ok: true,
