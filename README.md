@@ -54,8 +54,8 @@ npm run dev
 
 ## MVP-обмеження
 
-- SMTP-відправку ще не підключено: система тільки створює записи `email_notifications`.
-- Для MVP тимчасовий пароль після прийняття pending-заяви зберігається в `email_notifications.payload`, щоб його можна було передати після підключення email-відправки. Plain password не записується в `audit_log`.
+- SMTP-відправку підключено через змінні `SMTP_*`; якщо вони не задані, система тільки створює записи `email_notifications`.
+- Для MVP тимчасовий пароль після прийняття pending-заяви зберігається в `email_notifications.payload`, щоб його можна було передати email-повідомленням. Plain password не записується в `audit_log`.
 - Перед продуктивним запуском потрібно перейти на one-time reset link або очищати payload після успішної відправки email-повідомлення.
 
 ## Важливі команди
@@ -103,6 +103,12 @@ CLIENT_URL=http://localhost:5173
 DATABASE_PATH=server/data/chat-storage.db
 UPLOADS_DIR=server/uploads
 GENERATED_DOCUMENTS_DIR=server/generated-documents
+SMTP_HOST=mail.uaheat.net
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=no-reply@uaheat.net
+SMTP_PASSWORD=your-smtp-password
+SMTP_FROM=no-reply@uaheat.net
 ```
 
 ## Нормативна основа

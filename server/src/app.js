@@ -54,6 +54,7 @@ import {
   updateSetting,
   updateStageTemplate,
   updateStation,
+  updateUser,
 } from './database.js';
 import {
   hashPassword,
@@ -78,6 +79,7 @@ import {
 import { isValidApplicationStatus } from './applicationStatusWorkflow.js';
 import { normalizeRegion } from './ukraineRegions.js';
 import { removeStoredFiles, removeUploadedFiles, upload } from './uploads.js';
+import { sendPreparedApplicationEmails } from './mailer.js';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const documentTypes = new Set(['appendix1', 'appendix2', 'appendix3', 'appendix4', 'appendix5']);
@@ -492,6 +494,27 @@ function validateCreateUserPayload(input, actor) {
     password,
     role,
     stationId,
+  };
+}
+
+function validateUpdateUserPayload(input) {
+  const fullName = validateFullName(input?.fullName ?? '');
+  const login = validateOptionalText(input?.login, 160, 'Логін').toLowerCase();
+  const role = String(input?.role ?? 'customer');
+
+  if (!['manager', 'customer'].includes(role)) {
+    throw new Error('Адмін може редагувати менеджерів і замовників.');
+  }
+
+  const stationId = validateStationId(input?.stationId);
+  const password = String(input?.password ?? '');
+
+  return {
+    fullName,
+    login,
+    role,
+    stationId,
+    password: password ? validatePassword(password) : '',
   };
 }
 
@@ -1060,6 +1083,40 @@ export function createApp({ clientUrl }) {
     }
   });
 
+  app.put('/api/users/:userId', requireAuth, requireAdmin, async (request, response) => {
+    const userId = Number(request.params.userId);
+
+    if (!Number.isInteger(userId) || userId < 1) {
+      return sendError(response, 400, 'Некоректний ідентифікатор користувача.');
+    }
+
+    try {
+      const payload = validateUpdateUserPayload(request.body);
+      const passwordHash = payload.password ? await hashPassword(payload.password) : '';
+      const updatedUser = updateUser(userId, {
+        fullName: payload.fullName,
+        login: payload.login,
+        passwordHash,
+        role: payload.role,
+        stationId: payload.stationId,
+      }, request.auth.user);
+
+      if (!updatedUser) {
+        return sendError(response, 404, 'Користувача не знайдено або його не можна редагувати.');
+      }
+
+      return response.json({
+        user: userToClient(updatedUser),
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return sendError(response, 409, 'Користувач з таким ПІБ або логіном уже існує.');
+      }
+
+      return sendError(response, 400, error.message);
+    }
+  });
+
   app.delete('/api/users/:userId', requireAuth, requireAdmin, (request, response) => {
     const userId = Number(request.params.userId);
 
@@ -1106,10 +1163,24 @@ export function createApp({ clientUrl }) {
     }
   });
 
-  app.put('/api/stations/:stationId', requireAuth, requireAdmin, (request, response) => {
+  app.put('/api/stations/:stationId', requireAuth, requireStaff, (request, response) => {
     try {
       const stationId = validateInteger(request.params.stationId, 'Ідентифікатор станції', { min: 1 });
-      const payload = validateStationPayload(request.body);
+      const currentStation = getStationById(stationId);
+
+      if (!currentStation) {
+        return sendError(response, 404, 'Станцію/компанію не знайдено.');
+      }
+
+      if (request.auth.user.role !== 'admin' && request.auth.user.stationId !== stationId) {
+        return sendError(response, 403, 'Менеджер може редагувати тільки дані своєї станції/компанії.');
+      }
+
+      const payload = validateStationPayload({
+        ...request.body,
+        region: request.auth.user.role === 'admin' ? request.body?.region : currentStation.region,
+        isActive: request.auth.user.role === 'admin' ? request.body?.isActive : currentStation.isActive,
+      });
       const station = updateStation(stationId, payload, request.auth.user);
 
       if (!station) {
@@ -1259,7 +1330,7 @@ export function createApp({ clientUrl }) {
   app.post(
     '/api/applications/:applicationId/customer-access/reveal',
     requireAuth,
-    requireStaff,
+    requireAdmin,
     requireApplicationAccess,
     (request, response) => {
       if (!request.application.customerUserId) {
@@ -1312,10 +1383,14 @@ export function createApp({ clientUrl }) {
             return sendError(response, 404, 'Заяву не знайдено.');
           }
 
+          const emailDispatch = await sendPreparedApplicationEmails(result.application.id, request.auth.user);
+          const application = getApplicationById(result.application.id);
+
           return response.json({
-            application: result.application,
+            application,
             accessPrepared: true,
             createdUser: result.createdUser,
+            emailDispatch,
           });
         }
 
@@ -1325,8 +1400,12 @@ export function createApp({ clientUrl }) {
           return sendError(response, 404, 'Заяву не знайдено.');
         }
 
+        const emailDispatch = await sendPreparedApplicationEmails(application.id, request.auth.user);
+        const refreshedApplication = getApplicationById(application.id);
+
         response.json({
-          application,
+          application: refreshedApplication,
+          emailDispatch,
         });
       } catch (error) {
         if (isUniqueConstraintError(error)) {
@@ -1360,7 +1439,7 @@ export function createApp({ clientUrl }) {
     requireAuth,
     requireStaff,
     requireApplicationAccess,
-    (request, response) => {
+    async (request, response) => {
       try {
         const stageId = Number(request.params.stageId);
 
@@ -1380,8 +1459,12 @@ export function createApp({ clientUrl }) {
           return sendError(response, 404, 'Етап не знайдено.');
         }
 
+        const emailDispatch = await sendPreparedApplicationEmails(application.id, request.auth.user);
+        const refreshedApplication = getApplicationById(application.id);
+
         response.json({
-          application,
+          application: refreshedApplication,
+          emailDispatch,
         });
       } catch (error) {
         return sendError(response, 400, error.message);

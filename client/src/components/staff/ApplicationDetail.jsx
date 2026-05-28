@@ -74,6 +74,7 @@ function getStatusActionLabel(currentStatus, nextStatus, fallbackLabel) {
 export function ApplicationDetail({
   appendix3Fields,
   availableStatusOptions,
+  canRevealCustomerAccess,
   deadlineDataDraft,
   disabledDeadlineData,
   disabledStatus,
@@ -179,6 +180,7 @@ export function ApplicationDetail({
         accessNotification={accessNotification}
         accessState={accessState}
         application={selectedApplication}
+        canRevealCustomerAccess={canRevealCustomerAccess}
         isRevealingAccess={isRevealingAccess}
         onCopyPassword={handleCopyPassword}
         onHidePassword={() => setRevealedAccess(null)}
@@ -301,6 +303,7 @@ function CustomerAccessBlock({
   accessNotification,
   accessState,
   application,
+  canRevealCustomerAccess,
   isRevealingAccess,
   onCopyPassword,
   onHidePassword,
@@ -333,7 +336,7 @@ function CustomerAccessBlock({
         ) : null}
       </div>
 
-      {application.customerUserId ? (
+      {application.customerUserId && canRevealCustomerAccess ? (
         <div className="customer-access-card__actions">
           {!revealedAccess ? (
             <button

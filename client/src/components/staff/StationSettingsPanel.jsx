@@ -16,18 +16,21 @@ function normalizeStationDraft(station) {
 
 export function StationSettingsPanel({
   active,
+  canManageOperationalFields = true,
   handleSaveStation,
+  kicker = 'Адмін',
   savingStationId,
   setStationDrafts,
   stationDrafts,
   stations,
+  title = 'Станції/компанії',
 }) {
   return (
     <section className="surface-card manager-card application-detail-grid__wide" hidden={!active}>
       <div className="section-header">
         <div>
-          <span className="section-kicker">Адмін</span>
-          <h2>Станції/компанії</h2>
+          <span className="section-kicker">{kicker}</span>
+          <h2>{title}</h2>
         </div>
         <span className="counter-chip">{stations.length}</span>
       </div>
@@ -64,60 +67,66 @@ export function StationSettingsPanel({
                     />
                   </label>
                 ))}
-                <label className="field-block">
-                  <span>Область обслуговування</span>
-                  <select
-                    className="field-input"
-                    onChange={(event) =>
-                      setStationDrafts((current) => ({
-                        ...current,
-                        [station.id]: { ...draft, region: event.target.value },
-                      }))
-                    }
-                    value={draft.region}
-                  >
-                    <option value="">Не закріплено</option>
-                    {UKRAINE_REGIONS.map((region) => (
-                      <option key={region} value={region}>
-                        {region}
-                      </option>
-                    ))}
-                  </select>
-                  <small className="field-help">
-                    Без області станція не буде використовуватись для автоматичного розподілу заявок.
-                  </small>
-                </label>
+                {canManageOperationalFields ? (
+                  <label className="field-block">
+                    <span>Область обслуговування</span>
+                    <select
+                      className="field-input"
+                      onChange={(event) =>
+                        setStationDrafts((current) => ({
+                          ...current,
+                          [station.id]: { ...draft, region: event.target.value },
+                        }))
+                      }
+                      value={draft.region}
+                    >
+                      <option value="">Не закріплено</option>
+                      {UKRAINE_REGIONS.map((region) => (
+                        <option key={region} value={region}>
+                          {region}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="field-help">
+                      Без області станція не буде використовуватись для автоматичного розподілу заявок.
+                    </small>
+                  </label>
+                ) : null}
               </div>
 
-              <label className="field-block">
-                <span>Примітки</span>
-                <textarea
-                  className="field-input field-textarea"
-                  onChange={(event) =>
-                    setStationDrafts((current) => ({
-                      ...current,
-                      [station.id]: { ...draft, notes: event.target.value },
-                    }))
-                  }
-                  rows={2}
-                  value={draft.notes}
-                />
-              </label>
-
-              <div className="stage-editor__footer">
-                <label className="access-toggle">
-                  <input
-                    checked={draft.isActive}
+              {canManageOperationalFields ? (
+                <label className="field-block">
+                  <span>Примітки</span>
+                  <textarea
+                    className="field-input field-textarea"
                     onChange={(event) =>
                       setStationDrafts((current) => ({
                         ...current,
-                        [station.id]: { ...draft, isActive: event.target.checked },
+                        [station.id]: { ...draft, notes: event.target.value },
                       }))
                     }
-                    type="checkbox"
+                    rows={2}
+                    value={draft.notes}
                   />
-                  <span>Активна</span>
                 </label>
+              ) : null}
+
+              <div className="stage-editor__footer">
+                {canManageOperationalFields ? (
+                  <label className="access-toggle">
+                    <input
+                      checked={draft.isActive}
+                      onChange={(event) =>
+                        setStationDrafts((current) => ({
+                          ...current,
+                          [station.id]: { ...draft, isActive: event.target.checked },
+                        }))
+                      }
+                      type="checkbox"
+                    />
+                    <span>Активна</span>
+                  </label>
+                ) : null}
                 <button
                   className="primary-button"
                   disabled={savingStationId === station.id}

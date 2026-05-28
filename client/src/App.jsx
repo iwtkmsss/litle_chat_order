@@ -308,11 +308,11 @@ export default function App() {
   }
 
   if (user.role === 'admin') {
-    return <AdminPage user={user} onLogout={handleLogout} />;
+    return <AdminPage user={user} onLogout={handleLogout} onNavigate={navigate} />;
   }
 
   if (route.role === 'manager') {
-    return <ManagerPage user={user} onLogout={handleLogout} />;
+    return <ManagerPage user={user} onLogout={handleLogout} onNavigate={navigate} />;
   }
 
   return <CustomerPage user={user} onLogout={handleLogout} />;

@@ -33,3 +33,11 @@ export const pendingSessionCookieName = 'lco_pending_access';
 export const sessionDurationMs = 1000 * 60 * 60 * 24 * 30;
 export const uploadFileLimit = 20 * 1024 * 1024;
 export const uploadFilesPerMessage = 5;
+export const smtpConfig = {
+  host: process.env.SMTP_HOST || '',
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: process.env.SMTP_SECURE === 'true',
+  user: process.env.SMTP_USER || '',
+  password: process.env.SMTP_PASSWORD || '',
+  from: process.env.SMTP_FROM || process.env.SMTP_USER || '',
+};

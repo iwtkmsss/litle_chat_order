@@ -1059,6 +1059,23 @@ const createUserStatement = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
+const updateUserStatement = db.prepare(`
+  UPDATE users
+  SET full_name = ?,
+      full_name_normalized = ?,
+      login = ?,
+      login_normalized = ?,
+      role = ?,
+      station_id = ?
+  WHERE id = ? AND role != 'admin' AND deleted_at IS NULL
+`);
+
+const updateUserPasswordStatement = db.prepare(`
+  UPDATE users
+  SET password_hash = ?
+  WHERE id = ? AND role != 'admin' AND deleted_at IS NULL
+`);
+
 const findUserByNormalizedNameStatement = db.prepare(`
   SELECT ${userFields}
   FROM users
@@ -1715,6 +1732,32 @@ const listEmailNotificationsStatement = db.prepare(`
   FROM email_notifications
   WHERE application_id = ?
   ORDER BY created_at DESC, id DESC
+`);
+
+const listPreparedEmailNotificationsStatement = db.prepare(`
+  SELECT
+    id,
+    application_id AS applicationId,
+    stage_id AS stageId,
+    recipient_email AS recipientEmail,
+    recipient_name AS recipientName,
+    subject,
+    body,
+    notification_type AS notificationType,
+    payload,
+    status,
+    created_at AS createdAt
+  FROM email_notifications
+  WHERE application_id = ?
+    AND status = 'prepared'
+    AND recipient_email <> ''
+  ORDER BY created_at ASC, id ASC
+`);
+
+const markEmailNotificationSentStatement = db.prepare(`
+  UPDATE email_notifications
+  SET status = 'sent'
+  WHERE id = ? AND status = 'prepared'
 `);
 
 const latestCustomerAccessNotificationStatement = db.prepare(`
@@ -2591,6 +2634,86 @@ export function createUser({ fullName, login = '', passwordHash, role, stationId
   });
 
   return user;
+}
+
+const updateUserTransaction = db.transaction((userId, input, actor) => {
+  const current = getUserById(userId);
+
+  if (!current || current.role === 'admin' || current.deleted_at) {
+    return null;
+  }
+
+  const before = {
+    id: current.id,
+    fullName: current.fullName,
+    login: current.login,
+    role: current.role,
+    stationId: current.stationId,
+  };
+
+  updateUserStatement.run(
+    input.fullName,
+    normalizeLoginKey(input.fullName),
+    input.login,
+    input.login ? normalizeLoginKey(input.login) : '',
+    input.role,
+    input.stationId,
+    userId,
+  );
+
+  if (input.passwordHash) {
+    updateUserPasswordStatement.run(input.passwordHash, userId);
+    deleteUserSessionsStatement.run(userId);
+  }
+
+  const updated = getUserById(userId);
+
+  recordAuditLog({
+    actor,
+    stationId: updated.stationId,
+    entityType: 'user',
+    entityId: updated.id,
+    action: input.passwordHash ? 'update_with_password' : 'update',
+    summary: `Оновлено користувача ${updated.fullName}.`,
+    before,
+    after: {
+      id: updated.id,
+      fullName: updated.fullName,
+      login: updated.login,
+      role: updated.role,
+      stationId: updated.stationId,
+      passwordChanged: Boolean(input.passwordHash),
+    },
+  });
+
+  return updated;
+});
+
+export function updateUser(userId, input, actor) {
+  return updateUserTransaction(userId, input, actor);
+}
+
+export function listPreparedEmailNotifications(applicationId) {
+  return listPreparedEmailNotificationsStatement
+    .all(applicationId)
+    .map((row) => mapEmailNotification(row, { redactSensitive: false }));
+}
+
+export function markEmailNotificationSent(notificationId, actor = null) {
+  const result = markEmailNotificationSentStatement.run(notificationId);
+
+  if (result.changes > 0) {
+    recordAuditLog({
+      actor,
+      entityType: 'email_notification',
+      entityId: notificationId,
+      action: 'sent',
+      summary: `Email-повідомлення #${notificationId} позначено як відправлене.`,
+      after: { notificationId, status: 'sent' },
+    });
+  }
+
+  return result.changes > 0;
 }
 
 function getPendingApplicationById(applicationId) {

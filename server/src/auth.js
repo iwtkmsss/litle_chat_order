@@ -53,6 +53,7 @@ export function userToClient(user) {
   return {
     id: user.id,
     fullName: user.fullName ?? user.full_name,
+    login: user.login ?? '',
     role: user.role,
     stationId: user.stationId ?? null,
     stationName: user.stationName ?? '',

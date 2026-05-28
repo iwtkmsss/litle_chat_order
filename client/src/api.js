@@ -94,6 +94,13 @@ export const api = {
     });
   },
 
+  updateUser(userId, input) {
+    return request(`/api/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  },
+
   deleteUser(userId) {
     return request(`/api/users/${userId}`, {
       method: 'DELETE',

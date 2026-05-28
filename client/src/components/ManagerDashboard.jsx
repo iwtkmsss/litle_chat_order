@@ -9,7 +9,7 @@ import { ApplicationStagesPanel } from './staff/ApplicationStagesPanel';
 import { CreateApplicationPanel } from './staff/CreateApplicationPanel';
 import { CustomerPanel, UserCreateForm } from './staff/CustomerPanel';
 import { DashboardModal, StaffLayout } from './staff/StaffLayout';
-import { StationCreateForm } from './staff/StationSettingsPanel';
+import { StationCreateForm, StationSettingsPanel } from './staff/StationSettingsPanel';
 import {
   getApplicationStatusTransitionOptions,
 } from '../connectionContent';
@@ -136,7 +136,17 @@ function normalizeStationDraft(station) {
   };
 }
 
-export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' ? 'admin' : 'manager' }) {
+function normalizeUserDraft(chatUser) {
+  return {
+    fullName: chatUser.fullName ?? '',
+    login: chatUser.login ?? '',
+    password: '',
+    role: chatUser.role ?? 'customer',
+    stationId: String(chatUser.stationId ?? ''),
+  };
+}
+
+export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role === 'admin' ? 'admin' : 'manager' }) {
   const isAdmin = mode === 'admin';
   const [users, setUsers] = useState([]);
   const [applications, setApplications] = useState([]);
@@ -148,6 +158,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
   const [selectedApplicationId, setSelectedApplicationId] = useState(null);
   const [stageDrafts, setStageDrafts] = useState({});
   const [stationDrafts, setStationDrafts] = useState({});
+  const [userDrafts, setUserDrafts] = useState({});
   const [settingDrafts, setSettingDrafts] = useState({});
   const [deadlineDrafts, setDeadlineDrafts] = useState({});
   const [stageTemplateDrafts, setStageTemplateDrafts] = useState({});
@@ -169,6 +180,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
   const [isCreatingApplication, setIsCreatingApplication] = useState(false);
   const [savingStageId, setSavingStageId] = useState(null);
   const [savingStationId, setSavingStationId] = useState(null);
+  const [savingUserId, setSavingUserId] = useState(null);
   const [savingSettingKey, setSavingSettingKey] = useState('');
   const [savingDeadlineKey, setSavingDeadlineKey] = useState('');
   const [savingDeadlineData, setSavingDeadlineData] = useState(false);
@@ -220,6 +232,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
       setStageTemplates(templatesResponse.templates);
       setAuditEntries(auditResponse.entries);
       setStationDrafts(Object.fromEntries(stationsResponse.stations.map((station) => [station.id, normalizeStationDraft(station)])));
+      setUserDrafts(Object.fromEntries(usersResponse.users.map((chatUser) => [chatUser.id, normalizeUserDraft(chatUser)])));
       setSettingDrafts(Object.fromEntries(settingsResponse.settings.map((setting) => [setting.key, setting.value])));
       setDeadlineDrafts(Object.fromEntries(deadlineResponse.rules.map((rule) => [rule.key, { ...rule }])));
       setStageTemplateDrafts(Object.fromEntries(templatesResponse.templates.map((template) => [template.id, { ...template }])));
@@ -329,6 +342,21 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
       setPanelMessage(actionError.message);
     } finally {
       setIsCreatingUser(false);
+    }
+  }
+
+  async function handleSaveUser(chatUser) {
+    setSavingUserId(chatUser.id);
+    setPanelMessage('');
+
+    try {
+      await api.updateUser(chatUser.id, userDrafts[chatUser.id]);
+      setPanelMessage('Користувача оновлено.');
+      await loadDashboard({ silent: true });
+    } catch (actionError) {
+      setPanelMessage(actionError.message);
+    } finally {
+      setSavingUserId(null);
     }
   }
 
@@ -596,6 +624,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
   const dashboardPages = [
     { id: 'registry', label: 'Заяви' },
     { id: 'people', label: isAdmin ? 'Користувачі' : 'Замовники' },
+    ...(!isAdmin ? [{ id: 'staticData', label: 'Сталі дані' }] : []),
     ...(isAdmin ? [{ id: 'settings', label: 'Налаштування' }] : []),
   ];
 
@@ -610,6 +639,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
       onOpenApplication={() => setActiveModal('application')}
       onOpenStation={() => setActiveModal('station')}
       onOpenUser={() => setActiveModal('user')}
+      onNavigate={onNavigate}
       onRefresh={() => loadDashboard()}
       panelMessage={panelMessage}
       user={user}
@@ -700,7 +730,26 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
           deletingUserId={deletingUserId}
           isAdmin={isAdmin}
           onDeleteUser={handleDeleteUser}
+          onSaveUser={handleSaveUser}
+          savingUserId={savingUserId}
+          setUserDrafts={setUserDrafts}
+          stations={stations}
+          userDrafts={userDrafts}
           users={users}
+        />
+      ) : null}
+
+      {activeDashboardPage === 'staticData' && !isAdmin ? (
+        <StationSettingsPanel
+          active
+          canManageOperationalFields={false}
+          handleSaveStation={handleSaveStation}
+          savingStationId={savingStationId}
+          setStationDrafts={setStationDrafts}
+          stationDrafts={stationDrafts}
+          stations={stations}
+          title="Дані компанії"
+          kicker="Сталі дані"
         />
       ) : null}
 
@@ -720,6 +769,7 @@ export function ManagerDashboard({ user, onLogout, mode = user.role === 'admin' 
             onSaveDeadlineData={handleSaveDeadlineData}
             onSaveStatus={handleSaveStatus}
             isAdmin={isAdmin}
+            canRevealCustomerAccess={isAdmin}
             selectedApplication={selectedApplication}
             setDeadlineDataDraft={setDeadlineDataDraft}
             setStatusDraft={setStatusDraft}
