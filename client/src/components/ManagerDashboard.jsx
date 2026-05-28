@@ -779,6 +779,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
           <ApplicationDocumentsPanel
             generatingDocumentType={generatingDocumentType}
             getGeneratedDocumentOptions={getGeneratedDocumentOptions}
+            isAdmin={isAdmin}
             onGenerateDocument={handleGenerateDocument}
             selectedApplication={selectedApplication}
           />

@@ -11,6 +11,7 @@ const notificationStatusLabels = {
 export function ApplicationDocumentsPanel({
   generatingDocumentType,
   getGeneratedDocumentOptions,
+  isAdmin,
   onGenerateDocument,
   selectedApplication,
 }) {
@@ -52,32 +53,34 @@ export function ApplicationDocumentsPanel({
         </div>
       </section>
 
-      <section className="surface-card manager-card">
-        <div className="section-header">
-          <div>
-            <h2>Email-листи</h2>
-            <p className="muted-copy">Листи для інформування замовника про стадії виконання етапів.</p>
+      {isAdmin ? (
+        <section className="surface-card manager-card">
+          <div className="section-header">
+            <div>
+              <h2>Email-листи</h2>
+              <p className="muted-copy">Листи для інформування замовника про стадії виконання етапів.</p>
+            </div>
+            <span className="counter-chip">{selectedApplication.notifications.length}</span>
           </div>
-          <span className="counter-chip">{selectedApplication.notifications.length}</span>
-        </div>
 
-        {selectedApplication.notifications.length === 0 ? (
-          <p className="muted-copy">Листів ще немає.</p>
-        ) : (
-          <div className="email-log">
-            {selectedApplication.notifications.slice(0, 5).map((notification) => (
-              <article className="email-log-item" key={notification.id}>
-                <strong>{notification.subject}</strong>
-                <span>
-                  {notification.recipientEmail || 'email не вказано'} ·{' '}
-                  {notificationStatusLabels[notification.status] ?? notification.status}
-                </span>
-                <small>{formatDateTime(notification.createdAt)}</small>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+          {selectedApplication.notifications.length === 0 ? (
+            <p className="muted-copy">Листів ще немає.</p>
+          ) : (
+            <div className="email-log">
+              {selectedApplication.notifications.slice(0, 5).map((notification) => (
+                <article className="email-log-item" key={notification.id}>
+                  <strong>{notification.subject}</strong>
+                  <span>
+                    {notification.recipientEmail || 'email не вказано'} ·{' '}
+                    {notificationStatusLabels[notification.status] ?? notification.status}
+                  </span>
+                  <small>{formatDateTime(notification.createdAt)}</small>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
     </>
   );
 }
