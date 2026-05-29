@@ -193,7 +193,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
   const [deletingDocumentId, setDeletingDocumentId] = useState(null);
   const [uploadingStageFileId, setUploadingStageFileId] = useState(null);
   const [deletingStageFileId, setDeletingStageFileId] = useState(null);
-  const [activeDashboardPage, setActiveDashboardPage] = useState('registry');
+  const [activeDashboardPage, setActiveDashboardPage] = useState(isAdmin ? 'registry' : 'people');
   const [activeModal, setActiveModal] = useState(null);
 
   const loadDashboard = useEffectEvent(async ({ silent = false } = {}) => {
@@ -718,8 +718,13 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
     }));
   }
 
+  function openApplicationFromRegistry(applicationId) {
+    setSelectedApplicationId(applicationId);
+    setActiveDashboardPage('registry');
+  }
+
   const dashboardPages = [
-    { id: 'registry', label: 'Заяви' },
+    { id: 'registry', label: isAdmin ? 'Заяви' : 'Заява' },
     { id: 'people', label: isAdmin ? 'Користувачі' : 'Замовники' },
     ...(!isAdmin ? [{ id: 'staticData', label: 'Сталі дані' }] : []),
     ...(isAdmin ? [{ id: 'settings', label: 'Налаштування' }] : []),
@@ -809,7 +814,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
         />
       ) : null}
 
-      {activeDashboardPage === 'registry' ? (
+      {activeDashboardPage === 'registry' && isAdmin ? (
         <ApplicationRegistry
           applications={applications}
           deletingApplicationId={deletingApplicationId}
@@ -822,7 +827,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
         />
       ) : null}
 
-      {activeDashboardPage === 'people' ? (
+      {activeDashboardPage === 'people' && isAdmin ? (
         <CustomerPanel
           deletingUserId={deletingUserId}
           isAdmin={isAdmin}
@@ -833,6 +838,21 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
           stations={stations}
           userDrafts={userDrafts}
           users={users}
+        />
+      ) : null}
+
+      {activeDashboardPage === 'people' && !isAdmin ? (
+        <ApplicationRegistry
+          applications={applications}
+          deletingApplicationId={deletingApplicationId}
+          isAdmin={isAdmin}
+          isLoading={isLoading}
+          onDeleteApplication={handleDeleteApplication}
+          onOpenApplication={openApplicationFromRegistry}
+          onSelectApplication={setSelectedApplicationId}
+          selectedApplicationId={selectedApplicationId}
+          stations={stations}
+          title="Заявки замовників"
         />
       ) : null}
 
@@ -848,6 +868,18 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
           title="Дані компанії"
           kicker="Сталі дані"
         />
+      ) : null}
+
+      {activeDashboardPage === 'registry' && !isAdmin && !selectedApplication ? (
+        <section className="surface-card manager-card">
+          <div className="section-header">
+            <div>
+              <span className="section-kicker">Заява</span>
+              <h2>Оберіть заявку</h2>
+              <p className="muted-copy">Перейдіть у вкладку “Замовники” та відкрийте потрібну заявку зі списку.</p>
+            </div>
+          </div>
+        </section>
       ) : null}
 
       {activeDashboardPage === 'registry' && selectedApplication ? (
@@ -866,7 +898,6 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
             onSaveDeadlineData={handleSaveDeadlineData}
             onSaveStatus={handleSaveStatus}
             isAdmin={isAdmin}
-            canRevealCustomerAccess={isAdmin}
             selectedApplication={selectedApplication}
             setDeadlineDataDraft={setDeadlineDataDraft}
             setStatusDraft={setStatusDraft}

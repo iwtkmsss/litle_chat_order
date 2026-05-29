@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   connectionTypeLabels,
   deadlineStatusLabels,
@@ -6,7 +6,6 @@ import {
   getApplicationStatusLabel,
   roleLabels,
 } from '../../connectionContent';
-import { api } from '../../api';
 import { formatDate, formatDateTime } from '../../utils';
 
 const statusActionLabels = {
@@ -25,44 +24,6 @@ const statusCommentLabels = {
   rejected: 'Причина відхилення або повернення',
 };
 
-function getAccessState(application) {
-  if (application.customerUserId) {
-    return {
-      tone: 'success',
-      title: 'Особистий кабінет створено.',
-      lines: ['Замовник може увійти через email і тимчасовий пароль.'],
-    };
-  }
-
-  if (application.status === 'needs_clarification') {
-    return {
-      tone: 'warning',
-      title: 'Тимчасовий кабінет активний.',
-      lines: [
-        'Замовник може відредагувати та повторно надіслати заяву.',
-        'Повноцінний особистий кабінет ще не створено.',
-      ],
-    };
-  }
-
-  if (application.status === 'rejected') {
-    return {
-      tone: 'danger',
-      title: 'Заявку відхилено або повернуто.',
-      lines: ['Особистий кабінет не створювався.'],
-    };
-  }
-
-  return {
-    tone: 'info',
-    title: 'Тимчасовий кабінет активний.',
-    lines: [
-      'Повноцінний особистий кабінет ще не створено.',
-      'Він буде створений після прийняття заявки в роботу.',
-    ],
-  };
-}
-
 function getStatusActionLabel(currentStatus, nextStatus, fallbackLabel) {
   if (currentStatus === 'needs_clarification' && nextStatus === 'accepted') {
     return 'Прийняти повторно в роботу';
@@ -74,7 +35,6 @@ function getStatusActionLabel(currentStatus, nextStatus, fallbackLabel) {
 export function ApplicationDetail({
   appendix3Fields,
   availableStatusOptions,
-  canRevealCustomerAccess,
   deadlineDataDraft,
   disabledDeadlineData,
   disabledStatus,
@@ -88,9 +48,7 @@ export function ApplicationDetail({
   setStatusDraft,
   statusDraft,
 }) {
-  const [revealedAccess, setRevealedAccess] = useState(null);
-  const [isRevealingAccess, setIsRevealingAccess] = useState(false);
-  const [accessError, setAccessError] = useState('');
+  const [isFullInfoOpen, setIsFullInfoOpen] = useState(false);
   const commentRequired = ['needs_clarification', 'rejected'].includes(statusDraft.status)
     && statusDraft.status !== selectedApplication.status;
   const isStatusCommentMissing = commentRequired && !statusDraft.comment.trim();
@@ -100,42 +58,6 @@ export function ApplicationDetail({
   const canChangeStatus = actionOptions.length > 0;
   const currentStatusLabel = getApplicationStatusLabel(selectedApplication.status, 'manager');
   const currentStatusDescription = getApplicationStatusDescription(selectedApplication.status, 'manager');
-  const accessState = getAccessState(selectedApplication);
-  const accessNotification = selectedApplication.notifications?.find(
-    (notification) => notification.notificationType === 'customer_access_prepared',
-  );
-
-  useEffect(() => {
-    setRevealedAccess(null);
-    setAccessError('');
-  }, [selectedApplication.id]);
-
-  async function handleRevealAccess() {
-    setIsRevealingAccess(true);
-    setAccessError('');
-
-    try {
-      const response = await api.revealCustomerAccess(selectedApplication.id);
-      setRevealedAccess(response);
-    } catch (error) {
-      setAccessError(error.message);
-    } finally {
-      setIsRevealingAccess(false);
-    }
-  }
-
-  async function handleCopyPassword() {
-    if (!revealedAccess?.temporaryPassword) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(revealedAccess.temporaryPassword);
-      setAccessError('');
-    } catch {
-      setAccessError('Не вдалося скопіювати пароль. Виділіть його вручну.');
-    }
-  }
 
   function selectStatusAction(status) {
     setStatusDraft({ status, comment: '' });
@@ -146,27 +68,35 @@ export function ApplicationDetail({
   }
 
   return (
-    <section className="surface-card manager-card">
-      <div className="section-header">
-        <div>
-          <span className="section-kicker">Заява {selectedApplication.applicationNumber}</span>
-          <h2>{selectedApplication.applicantFullName}</h2>
-          <p className="muted-copy">{selectedApplication.objectAddress}</p>
+    <section className="surface-card manager-card application-overview-card">
+      <div className="application-overview-block application-overview-block--main">
+        <div className="section-header">
+          <div>
+            <span className="section-kicker">Заява {selectedApplication.applicationNumber}</span>
+            <h2>{selectedApplication.applicantFullName}</h2>
+            <p className="muted-copy">{selectedApplication.objectAddress}</p>
+          </div>
+        </div>
+
+        <div className="detail-meta-grid">
+          <span>{selectedApplication.stationName}</span>
+          <span>Область: {selectedApplication.objectRegion || 'не вказано'}</span>
+          <span>{connectionTypeLabels[selectedApplication.connectionType]}</span>
+          <span>{currentStatusLabel}</span>
+          <span>Телефон: {selectedApplication.phone}</span>
+          <span>Email: {selectedApplication.email || 'не вказано'}</span>
+          <span>Дата заяви: {formatDate(selectedApplication.receivedAt)}</span>
+          <span>Відповідальний: {selectedApplication.responsibleName || 'не вказано'}</span>
+        </div>
+
+        <div className="application-detail-toolbar">
+          <button className="secondary-button" onClick={() => setIsFullInfoOpen(true)} type="button">
+            Повна інформація по заявці
+          </button>
         </div>
       </div>
 
-      <div className="detail-meta-grid">
-        <span>{selectedApplication.stationName}</span>
-        {selectedApplication.objectRegion ? <span>Область: {selectedApplication.objectRegion}</span> : null}
-        <span>{connectionTypeLabels[selectedApplication.connectionType]}</span>
-        <span>{currentStatusLabel}</span>
-        <span>Телефон: {selectedApplication.phone}</span>
-        <span>Email: {selectedApplication.email || 'не вказано'}</span>
-        <span>Дата заяви: {formatDate(selectedApplication.receivedAt)}</span>
-        <span>Відповідальний: {selectedApplication.responsibleName || 'не вказано'}</span>
-      </div>
-
-      <div className="appendix-data-view">
+      <div className="appendix-data-view application-section--status">
         <h3>Статус заявки</h3>
         <p className="stage-note">
           <strong>{currentStatusLabel}</strong>
@@ -175,20 +105,7 @@ export function ApplicationDetail({
         </p>
       </div>
 
-      <CustomerAccessBlock
-        accessError={accessError}
-        accessNotification={accessNotification}
-        accessState={accessState}
-        application={selectedApplication}
-        canRevealCustomerAccess={canRevealCustomerAccess}
-        isRevealingAccess={isRevealingAccess}
-        onCopyPassword={handleCopyPassword}
-        onHidePassword={() => setRevealedAccess(null)}
-        onRevealAccess={handleRevealAccess}
-        revealedAccess={revealedAccess}
-      />
-
-      <div className="appendix-data-view">
+      <div className="appendix-data-view application-section--actions">
         <h3>Дії із заявкою</h3>
         {!canChangeStatus ? (
           <p className="stage-note">
@@ -254,133 +171,97 @@ export function ApplicationDetail({
         ) : null}
       </div>
 
-      {selectedApplication.notes ? <p className="stage-note">{selectedApplication.notes}</p> : null}
-
       <DeadlineChecks checks={selectedApplication.deadlineChecks} />
-      <StatusHistory entries={selectedApplication.statusHistory ?? []} />
       <DeadlineDataEditor
         deadlineDataDraft={deadlineDataDraft}
         disabled={disabledDeadlineData}
         onSave={onSaveDeadlineData}
         setDeadlineDataDraft={setDeadlineDataDraft}
       />
+      <StatusHistory entries={selectedApplication.statusHistory ?? []} />
 
-      <div className="appendix-data-view">
-        <h3>Дані з Додатка 3</h3>
-        <div className="appendix-data-grid">
-          {appendix3Fields
-            .filter(([key]) => selectedApplication.appendixData?.appendix3?.[key])
-            .map(([key, label]) => (
-              <span key={key}>
-                <strong>{label}</strong>
-                {selectedApplication.appendixData.appendix3[key]}
-              </span>
-            ))}
-        </div>
-
-        <h3>Дані з опитувального листа</h3>
-        <div className="appendix-data-grid">
-          <span>
-            <strong>Тип</strong>
-            {`${getQuestionnaireTypeDetails(selectedApplication.appendixData?.questionnaire?.type).appendixLabel} - ${getQuestionnaireTypeDetails(selectedApplication.appendixData?.questionnaire?.type).title}`}
-          </span>
-          {getQuestionnaireFields(selectedApplication.appendixData?.questionnaire?.type)
-            .filter(([key]) => selectedApplication.appendixData?.questionnaire?.[key])
-            .map(([key, label]) => (
-              <span key={key}>
-                <strong>{label}</strong>
-                {selectedApplication.appendixData.questionnaire[key]}
-              </span>
-            ))}
-        </div>
-      </div>
+      {isFullInfoOpen ? (
+        <ApplicationFullInfoModal
+          appendix3Fields={appendix3Fields}
+          getQuestionnaireFields={getQuestionnaireFields}
+          getQuestionnaireTypeDetails={getQuestionnaireTypeDetails}
+          onClose={() => setIsFullInfoOpen(false)}
+          selectedApplication={selectedApplication}
+        />
+      ) : null}
     </section>
   );
 }
 
-function CustomerAccessBlock({
-  accessError,
-  accessNotification,
-  accessState,
-  application,
-  canRevealCustomerAccess,
-  isRevealingAccess,
-  onCopyPassword,
-  onHidePassword,
-  onRevealAccess,
-  revealedAccess,
+function ApplicationFullInfoModal({
+  appendix3Fields,
+  getQuestionnaireFields,
+  getQuestionnaireTypeDetails,
+  onClose,
+  selectedApplication,
 }) {
+  const questionnaireDetails = getQuestionnaireTypeDetails(selectedApplication.appendixData?.questionnaire?.type);
+
   return (
-    <div className={`appendix-data-view customer-access-card customer-access-card--${accessState.tone}`}>
-      <h3>Доступ замовника</h3>
-      <p className="stage-note">
-        <strong>{accessState.title}</strong>
-        <br />
-        {accessState.lines.join(' ')}
-      </p>
-
-      <div className="appendix-data-grid">
-        <span>
-          <strong>Email / логін</strong>
-          {application.email || application.customerUserName || 'не вказано'}
-        </span>
-        <span>
-          <strong>Стан доступу</strong>
-          {application.customerUserId ? 'Кабінет створено' : 'Тільки тимчасовий кабінет'}
-        </span>
-        {accessNotification ? (
-          <span>
-            <strong>Email-повідомлення</strong>
-            {accessNotification.status === 'prepared' ? 'Підготовлено' : 'Не підготовлено'}
-          </span>
-        ) : null}
-      </div>
-
-      {application.customerUserId && canRevealCustomerAccess ? (
-        <div className="customer-access-card__actions">
-          {!revealedAccess ? (
-            <button
-              className="secondary-button"
-              disabled={isRevealingAccess}
-              onClick={onRevealAccess}
-              type="button"
-            >
-              {isRevealingAccess ? 'Завантаження...' : 'Показати тимчасовий пароль'}
-            </button>
-          ) : (
-            <div className="customer-access-secret">
-              <div className="appendix-data-grid">
-                <span>
-                  <strong>Логін</strong>
-                  {revealedAccess.login}
-                </span>
-                <span>
-                  <strong>Тимчасовий пароль</strong>
-                  <code>{revealedAccess.temporaryPassword}</code>
-                </span>
-              </div>
-              <p className="stage-note">
-                Це тимчасовий пароль для першого входу замовника. Не передавайте його стороннім особам.
-                Після підключення реальної email-відправки доступ буде передаватися автоматично.
-              </p>
-              <div className="header-actions">
-                <button className="secondary-button" onClick={onCopyPassword} type="button">
-                  Скопіювати пароль
-                </button>
-                <button className="secondary-button" onClick={onHidePassword} type="button">
-                  Сховати пароль
-                </button>
-              </div>
-            </div>
-          )}
-          {accessError ? <p className="form-error">{accessError}</p> : null}
-          {!accessError && !accessNotification ? (
-            <p className="stage-note">
-              Тимчасовий пароль недоступний. Потрібно сформувати новий доступ окремою дією.
-            </p>
-          ) : null}
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-label="Повна інформація по заявці"
+        aria-modal="true"
+        className="modal-shell modal-shell--wide surface-card"
+        role="dialog"
+      >
+        <div className="modal-toolbar">
+          <div>
+            <span className="section-kicker">Заява {selectedApplication.applicationNumber}</span>
+            <h2>Повна інформація по заявці</h2>
+          </div>
+          <button className="secondary-button" onClick={onClose} type="button">
+            Закрити
+          </button>
         </div>
-      ) : null}
+
+        <div className="modal-content application-full-info">
+          <div className="appendix-data-view">
+            <h3>Дані з Додатка 3</h3>
+            <div className="appendix-data-grid">
+              {appendix3Fields
+                .filter(([key]) => selectedApplication.appendixData?.appendix3?.[key])
+                .map(([key, label]) => (
+                  <span key={key}>
+                    <strong>{label}</strong>
+                    {selectedApplication.appendixData.appendix3[key]}
+                  </span>
+                ))}
+            </div>
+          </div>
+
+          <div className="appendix-data-view">
+            <h3>Дані з опитувального листа</h3>
+            <div className="appendix-data-grid">
+              <span>
+                <strong>Тип</strong>
+                {`${questionnaireDetails.appendixLabel} - ${questionnaireDetails.title}`}
+              </span>
+              {getQuestionnaireFields(selectedApplication.appendixData?.questionnaire?.type)
+                .filter(([key]) => selectedApplication.appendixData?.questionnaire?.[key])
+                .map(([key, label]) => (
+                  <span key={key}>
+                    <strong>{label}</strong>
+                    {selectedApplication.appendixData.questionnaire[key]}
+                  </span>
+                ))}
+            </div>
+
+            {selectedApplication.notes ? (
+              <p className="stage-note application-full-info__note">
+                <strong>Коментар</strong>
+                <br />
+                {selectedApplication.notes}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -391,7 +272,7 @@ function StatusHistory({ entries }) {
   }
 
   return (
-    <div className="appendix-data-view">
+    <div className="appendix-data-view application-section--history">
       <h3>Історія статусів</h3>
       <div className="email-log">
         {entries.map((entry) => (
@@ -414,7 +295,7 @@ function StatusHistory({ entries }) {
 
 function DeadlineChecks({ checks }) {
   return (
-    <div className="appendix-data-view">
+    <div className="appendix-data-view application-section--deadlines">
       <h3>Контроль строків</h3>
       <div className="appendix-data-grid">
         {checks.map((check) => (
@@ -442,9 +323,9 @@ function DeadlineDataEditor({ deadlineDataDraft, disabled, onSave, setDeadlineDa
   ];
 
   return (
-    <div className="appendix-data-view">
+    <div className="appendix-data-view application-section--control-dates">
       <h3>Контрольні дати</h3>
-      <div className="stage-editor__controls">
+      <div className="stage-editor__controls deadline-data-controls">
         {fields.map(([key, label]) => (
           <label className="field-block" key={key}>
             <span>{label}</span>

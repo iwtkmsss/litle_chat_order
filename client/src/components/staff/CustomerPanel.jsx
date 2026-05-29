@@ -35,7 +35,11 @@ export function CustomerPanel({
         <div className="section-header">
           <div>
             <h2>{isAdmin ? 'Користувачі' : 'Кабінети замовників'}</h2>
-            <p className="muted-copy">Ролі, станції та доступ до особистого кабінету.</p>
+            <p className="muted-copy">
+              {isAdmin
+                ? 'Ролі, станції та доступ до особистого кабінету.'
+                : 'Швидкий реєстр для пошуку, контролю строків і роботи зі статусами.'}
+            </p>
           </div>
           <span className="counter-chip">{users.length}</span>
         </div>

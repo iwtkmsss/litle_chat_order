@@ -217,9 +217,11 @@ export function ApplicationRegistry({
   isAdmin,
   isLoading,
   onDeleteApplication,
+  onOpenApplication,
   onSelectApplication,
   selectedApplicationId,
   stations = [],
+  title = 'Заяви',
 }) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -284,8 +286,7 @@ export function ApplicationRegistry({
       <section className="surface-card manager-card">
         <div className="section-header">
           <div>
-            <h2>Заяви</h2>
-            <p className="muted-copy">Швидкий реєстр для пошуку, контролю строків і роботи зі статусами.</p>
+            <h2>{title}</h2>
           </div>
           <span className="counter-chip">{visibleApplications.length}</span>
         </div>
@@ -410,6 +411,8 @@ export function ApplicationRegistry({
                   <div className="application-card__meta">
                     <span>Станція: {application.stationName}</span>
                     {application.objectRegion ? <span>Область: {application.objectRegion}</span> : null}
+                    <span>Телефон: {application.phone || 'не вказано'}</span>
+                    <span>Email: {application.email || 'не вказано'}</span>
                     <span>Подано: {formatDate(application.receivedAt || application.createdAt)}</span>
                     <span>
                       Етапи: {application.stageSummary.completed}/{application.stageSummary.total}
@@ -418,16 +421,27 @@ export function ApplicationRegistry({
                   <span className="application-card__status-note">{statusDescription}</span>
                 </button>
 
-                {isAdmin ? (
+                {isAdmin || onOpenApplication ? (
                   <div className="application-card__actions">
-                    <button
-                      className="danger-button"
-                      disabled={deletingApplicationId === application.id}
-                      onClick={() => onDeleteApplication(application)}
-                      type="button"
-                    >
-                      {deletingApplicationId === application.id ? 'Видалення...' : 'Видалити'}
-                    </button>
+                    {onOpenApplication ? (
+                      <button
+                        className="primary-button"
+                        onClick={() => onOpenApplication(application.id)}
+                        type="button"
+                      >
+                        Перейти до заявки
+                      </button>
+                    ) : null}
+                    {isAdmin ? (
+                      <button
+                        className="danger-button"
+                        disabled={deletingApplicationId === application.id}
+                        onClick={() => onDeleteApplication(application)}
+                        type="button"
+                      >
+                        {deletingApplicationId === application.id ? 'Видалення...' : 'Видалити'}
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
               </article>

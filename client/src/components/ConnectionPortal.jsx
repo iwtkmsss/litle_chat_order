@@ -251,10 +251,16 @@ export function ConnectionPortal({
           <section className="surface-card info-card">
             <h2>Нормативна база</h2>
             <div className="document-grid">
-              {legalBase.map((documentName) => (
-                <span className="document-chip document-chip--legal" key={documentName}>
-                  {documentName}
-                </span>
+              {legalBase.map((document) => (
+                <a
+                  className="document-chip document-chip--legal"
+                  href={document.href}
+                  key={document.href}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {document.title}
+                </a>
               ))}
             </div>
           </section>

@@ -790,6 +790,13 @@ p {
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.94));
 }
 
+.application-overview-card {
+  display: grid;
+  gap: 12px;
+  border-left: 1px solid rgba(216, 226, 239, 0.92);
+  padding: 18px;
+}
+
 .dashboard-tabs,
 .dashboard-subtabs {
   display: flex;
@@ -1323,6 +1330,9 @@ p {
 
 .lookup-form .primary-button {
   align-self: end;
+  justify-self: center;
+  grid-column: 1 / -1;
+  width: min(520px, 100%);
 }
 
 .field-block--wide {
@@ -1434,6 +1444,13 @@ p {
 
 .document-chip--legal {
   background: #eef3f7;
+}
+
+.document-chip--legal:hover,
+.document-chip--legal:focus-visible {
+  border-color: #b7cadb;
+  background: #e7eff6;
+  outline: none;
 }
 
 .appendix-detail-list {
@@ -1662,6 +1679,95 @@ p {
 
 .detail-meta-grid span {
   padding: 10px 12px;
+  border: 1px solid #d9e1e9;
+  border-radius: 10px;
+  background: #f9fbfc;
+}
+
+.application-detail-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
+.application-detail-toolbar .secondary-button {
+  width: 100%;
+  min-height: 56px;
+}
+
+.application-overview-block,
+.application-overview-card > .appendix-data-view {
+  position: relative;
+  margin-top: 14px;
+  padding: 16px 16px 16px 20px;
+  border: 1px solid rgba(216, 226, 239, 0.95);
+  border-radius: 14px;
+  background: rgba(249, 251, 252, 0.72);
+  overflow: hidden;
+}
+
+.application-overview-block {
+  margin-top: 0;
+}
+
+.application-overview-block::before,
+.application-overview-card > .appendix-data-view::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  border-radius: 14px 0 0 14px;
+  background: rgba(31, 78, 121, 0.5);
+}
+
+.application-overview-card > .appendix-data-view:first-of-type {
+  margin-top: 14px;
+}
+
+.application-overview-card > .application-section--status::before {
+  background: #5f87ad;
+}
+
+.application-overview-card > .application-section--actions::before {
+  background: #d6a33b;
+}
+
+.application-overview-card > .application-section--deadlines::before {
+  background: #6f9d74;
+}
+
+.application-overview-card > .application-section--control-dates::before {
+  background: #4f7f9f;
+}
+
+.application-overview-card > .application-section--history::before {
+  background: #8a79ad;
+}
+
+.application-overview-block--main::before {
+  background: #2f7d55;
+}
+
+.application-full-info {
+  gap: 18px;
+}
+
+.application-full-info .appendix-data-view {
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.application-full-info .appendix-data-view::before {
+  display: none;
+}
+
+.application-full-info__note {
+  margin-top: 2px;
+  padding: 12px;
   border: 1px solid #d9e1e9;
   border-radius: 10px;
   background: #f9fbfc;
@@ -2028,6 +2134,13 @@ p {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.deadline-data-controls .field-block:nth-child(7) > span:first-child,
+.deadline-data-controls .field-block:nth-child(8) > span:first-child {
+  display: flex;
+  align-items: flex-start;
+  min-height: 66px;
 }
 
 .application-action-grid {
