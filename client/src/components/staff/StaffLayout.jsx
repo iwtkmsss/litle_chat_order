@@ -19,7 +19,7 @@ export function StaffLayout({
   return (
     <main className="workspace-shell">
       <header className="workspace-header">
-        <AppLogo compact onClick={() => onNavigate?.('/')} />
+        <AppLogo onClick={() => onNavigate?.('/')} />
 
         <nav className="workspace-nav" aria-label="Навігація кабінету">
           {dashboardPages.map((page) => (
