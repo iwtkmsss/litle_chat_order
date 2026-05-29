@@ -479,6 +479,7 @@ p {
 .field-block {
   display: grid;
   gap: 8px;
+  align-content: start;
 }
 
 .field-block span {
@@ -635,6 +636,34 @@ p {
 
 .workspace-header .app-logo {
   justify-self: start;
+}
+
+.customer-workspace-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 14px 18px;
+}
+
+.customer-workspace-header__title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.customer-workspace-header__eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.customer-workspace-header__eyebrow .section-kicker {
+  line-height: 1.2;
+}
+
+.customer-workspace-header h1 {
+  margin-top: 2px;
 }
 
 .workspace-header h1 {
@@ -1284,6 +1313,12 @@ p {
   font-family: inherit;
   letter-spacing: 0;
   font-size: 1.08rem;
+}
+
+.public-application-form .appendix-form-section > .field-block:not(.field-block--wide) > span:first-child {
+  display: flex;
+  align-items: flex-start;
+  min-height: 50px;
 }
 
 .lookup-form .primary-button {
@@ -2849,6 +2884,15 @@ p {
 
   .workspace-header .app-logo {
     justify-self: start;
+  }
+
+  .customer-workspace-header {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .customer-workspace-header__eyebrow {
+    gap: 8px;
   }
 
   .workspace-nav {

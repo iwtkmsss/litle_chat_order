@@ -134,10 +134,12 @@ export function UserWorkspace({ user, onLogout }) {
 
   return (
     <main className="workspace-shell">
-      <header className="workspace-header">
-        <div>
-          <AppLogo compact />
-          <span className="section-kicker">Особистий кабінет замовника</span>
+      <header className="workspace-header customer-workspace-header">
+        <div className="customer-workspace-header__title">
+          <div className="customer-workspace-header__eyebrow">
+            <AppLogo compact />
+            <span className="section-kicker">Особистий кабінет замовника</span>
+          </div>
           <h1>Мої заяви</h1>
           <p className="muted-copy">{user.fullName}</p>
         </div>
