@@ -14,6 +14,7 @@ import {
   APPLICATION_STATUSES,
   assertApplicationStatusTransition,
   isCustomerVisibleStatusComment,
+  isClosedApplicationStatus,
 } from './applicationStatusWorkflow.js';
 
 fs.mkdirSync(dataDir, { recursive: true });
@@ -21,7 +22,7 @@ fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(generatedDocumentsDir, { recursive: true });
 
-const schemaVersion = 9;
+const schemaVersion = 10;
 const db = new Database(databasePath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -287,6 +288,21 @@ db.exec(`
     updated_at TEXT NOT NULL,
     UNIQUE (application_id, stage_key),
     FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS application_stage_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL,
+    stage_id INTEGER NOT NULL,
+    stored_name TEXT NOT NULL UNIQUE,
+    original_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_by INTEGER,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+    FOREIGN KEY (stage_id) REFERENCES application_stages(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS pending_application_access_tokens (
@@ -638,6 +654,49 @@ function migrateApplicationStagesToV5() {
 }
 
 migrateApplicationStagesToV5();
+
+function migrateApplicationStageFilesToV10() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS application_stage_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      application_id INTEGER NOT NULL,
+      stage_id INTEGER NOT NULL,
+      stored_name TEXT NOT NULL UNIQUE,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+      FOREIGN KEY (stage_id) REFERENCES application_stages(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    INSERT OR IGNORE INTO application_stage_files (
+      application_id,
+      stage_id,
+      stored_name,
+      original_name,
+      mime_type,
+      size,
+      created_by,
+      created_at
+    )
+    SELECT
+      application_id,
+      id,
+      final_file_stored_name,
+      final_file_original_name,
+      final_file_mime_type,
+      final_file_size,
+      NULL,
+      updated_at
+    FROM application_stages
+    WHERE final_file_stored_name <> '';
+  `);
+}
+
+migrateApplicationStageFilesToV10();
 
 const defaultDeadlineRules = [
   {
@@ -1652,24 +1711,62 @@ const updateApplicationStageStatement = db.prepare(`
   WHERE id = ? AND application_id = ?
 `);
 
-const updateApplicationStageFinalFileStatement = db.prepare(`
-  UPDATE application_stages
-  SET final_file_stored_name = ?,
-      final_file_original_name = ?,
-      final_file_mime_type = ?,
-      final_file_size = ?,
-      updated_at = ?
-  WHERE id = ? AND application_id = ?
+const insertApplicationStageFileStatement = db.prepare(`
+  INSERT INTO application_stage_files (
+    application_id,
+    stage_id,
+    stored_name,
+    original_name,
+    mime_type,
+    size,
+    created_by,
+    created_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-const clearApplicationStageFinalFileStatement = db.prepare(`
-  UPDATE application_stages
-  SET final_file_stored_name = '',
-      final_file_original_name = '',
-      final_file_mime_type = '',
-      final_file_size = 0,
-      updated_at = ?
-  WHERE id = ? AND application_id = ?
+const countApplicationStageFilesStatement = db.prepare(`
+  SELECT COUNT(*) AS count
+  FROM application_stage_files
+  WHERE application_id = ? AND stage_id = ?
+`);
+
+const listApplicationStageFilesStatement = db.prepare(`
+  SELECT
+    id,
+    application_id AS applicationId,
+    stage_id AS stageId,
+    stored_name AS storedName,
+    original_name AS originalName,
+    mime_type AS mimeType,
+    size,
+    created_by AS createdBy,
+    created_at AS createdAt
+  FROM application_stage_files
+  WHERE application_id = ?
+  ORDER BY created_at ASC, id ASC
+`);
+
+const getApplicationStageFileByIdStatement = db.prepare(`
+  SELECT
+    application_stage_files.id,
+    application_stage_files.application_id AS applicationId,
+    application_stage_files.stage_id AS stageId,
+    application_stage_files.stored_name AS storedName,
+    application_stage_files.original_name AS originalName,
+    application_stage_files.mime_type AS mimeType,
+    application_stage_files.size,
+    application_stage_files.created_by AS createdBy,
+    application_stage_files.created_at AS createdAt,
+    application_stages.title AS stageTitle
+  FROM application_stage_files
+  INNER JOIN application_stages ON application_stages.id = application_stage_files.stage_id
+  WHERE application_stage_files.id = ?
+`);
+
+const deleteApplicationStageFileStatement = db.prepare(`
+  DELETE FROM application_stage_files
+  WHERE id = ?
 `);
 
 const updateApplicationTouchedStatement = db.prepare(`
@@ -2078,6 +2175,24 @@ const listAuditLogStatement = db.prepare(`
   LIMIT ?
 `);
 
+const listApplicationStageHistoryStatement = db.prepare(`
+  SELECT
+    audit_log.id,
+    audit_log.actor_user_id AS actorUserId,
+    audit_log.actor_name AS actorName,
+    audit_log.actor_role AS actorRole,
+    audit_log.action,
+    audit_log.summary,
+    audit_log.before_data AS beforeData,
+    audit_log.after_data AS afterData,
+    audit_log.created_at AS createdAt
+  FROM audit_log
+  INNER JOIN application_stages ON application_stages.id = CAST(audit_log.entity_id AS INTEGER)
+  WHERE audit_log.entity_type = 'application_stage'
+    AND application_stages.application_id = ?
+  ORDER BY audit_log.created_at DESC, audit_log.id DESC
+`);
+
 function mapUser(row) {
   if (!row) {
     return null;
@@ -2202,13 +2317,8 @@ function mapApplicationStage(row) {
     startedAt: row.startedAt,
     completedAt: row.completedAt,
     publicNote: row.publicNote,
-    finalFile: row.finalFileStoredName
-      ? {
-        originalName: row.finalFileOriginalName,
-        mimeType: row.finalFileMimeType,
-        size: row.finalFileSize,
-      }
-      : null,
+    finalFiles: [],
+    finalFile: null,
     isVisible: Boolean(row.isVisible),
     isOptional: Boolean(row.isOptional),
     createdAt: row.createdAt,
@@ -2217,9 +2327,41 @@ function mapApplicationStage(row) {
 }
 
 function listStagesForApplication(applicationId) {
-  return listApplicationStagesStatement
+  const stages = listApplicationStagesStatement
     .all(applicationId)
     .map(mapApplicationStage);
+  const filesByStageId = new Map();
+
+  listApplicationStageFilesStatement.all(applicationId).forEach((file) => {
+    const mappedFile = mapApplicationStageFile(file);
+    const current = filesByStageId.get(mappedFile.stageId) ?? [];
+    current.push(mappedFile);
+    filesByStageId.set(mappedFile.stageId, current);
+  });
+
+  return stages.map((stage) => {
+    const finalFiles = filesByStageId.get(stage.id) ?? [];
+
+    return {
+      ...stage,
+      finalFiles,
+      finalFile: finalFiles[0] ?? null,
+    };
+  });
+}
+
+function mapApplicationStageFile(row) {
+  return {
+    id: row.id,
+    applicationId: row.applicationId,
+    stageId: row.stageId,
+    storedName: row.storedName,
+    originalName: row.originalName,
+    mimeType: row.mimeType,
+    size: row.size,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+  };
 }
 
 function getChatSummary(chatId) {
@@ -2276,6 +2418,29 @@ function mapApplicationStatusHistory(row) {
   };
 }
 
+function mapApplicationStageHistory(row) {
+  const before = parseJsonObject(row.beforeData);
+  const after = parseJsonObject(row.afterData);
+
+  return {
+    id: `stage-${row.id}`,
+    action: row.action,
+    summary: row.summary,
+    stageId: after.id ?? before.id ?? null,
+    stageTitle: after.title ?? before.title ?? 'Етап',
+    fromStatus: before.status ?? '',
+    toStatus: after.status ?? '',
+    fromStartedAt: before.startedAt ?? '',
+    toStartedAt: after.startedAt ?? '',
+    fromCompletedAt: before.completedAt ?? '',
+    toCompletedAt: after.completedAt ?? '',
+    changedByUserId: row.actorUserId,
+    changedByName: row.actorName,
+    changedByRole: row.actorRole,
+    createdAt: row.createdAt,
+  };
+}
+
 function listStatusHistoryForApplication(applicationId, { includePrivate = true } = {}) {
   return listApplicationStatusHistoryStatement
     .all(applicationId)
@@ -2289,6 +2454,17 @@ function listStatusHistoryForApplication(applicationId, { includePrivate = true 
         changedByUserId: undefined,
         changedByName: undefined,
       }));
+}
+
+function listStageHistoryForApplication(applicationId, { includePrivate = true } = {}) {
+  if (!includePrivate) {
+    return [];
+  }
+
+  return listApplicationStageHistoryStatement
+    .all(applicationId)
+    .map(mapApplicationStageHistory)
+    .filter((entry) => entry.action !== 'delete_final_file');
 }
 
 function mapGeneratedDocument(row) {
@@ -2417,6 +2593,9 @@ function mapApplication(row, {
       ? listGeneratedDocumentsStatement.all(row.id).map(mapGeneratedDocument)
       : undefined,
     statusHistory: listStatusHistoryForApplication(row.id, {
+      includePrivate: includePrivateStatusHistory,
+    }),
+    stageHistory: listStageHistoryForApplication(row.id, {
       includePrivate: includePrivateStatusHistory,
     }),
   };
@@ -3814,6 +3993,11 @@ const updateApplicationTransaction = db.transaction((applicationId, input, actor
   const applicationNumber = input.applicationNumber || current.applicationNumber;
   const statusComment = String(input.statusComment ?? '').trim();
   const statusChanged = current.status !== input.status;
+
+  if (isClosedApplicationStatus(current.status) && !(statusChanged && input.status === 'accepted')) {
+    throw new Error('Заяву закрито. Відновіть заяву, щоб вносити зміни.');
+  }
+
   const transitionResult = statusChanged
     ? assertApplicationStatusTransition({
       actorRole: actor?.role,
@@ -4243,6 +4427,10 @@ const updateApplicationStageTransaction = db.transaction((applicationId, stageId
 
   if (!currentApplication || !currentStage) {
     return null;
+  }
+
+  if (isClosedApplicationStatus(currentApplication.status)) {
+    throw new Error('Заяву закрито. Відновіть заяву, щоб змінювати етапи.');
   }
 
   if (input.status === 'not_required' && !currentStage.isOptional) {
@@ -4675,19 +4863,33 @@ export function setApplicationStageFinalFile(applicationId, stageId, file, actor
     return null;
   }
 
+  const currentApplication = getApplicationByIdStatement.get(applicationId);
+
+  if (isClosedApplicationStatus(currentApplication?.status)) {
+    throw new Error('Заяву закрито. Відновіть заяву, щоб змінювати файли етапів.');
+  }
+
+  const currentCount = Number(countApplicationStageFilesStatement.get(applicationId, stageId)?.count ?? 0);
+
+  if (currentCount >= 5) {
+    throw new Error('До одного етапу можна додати не більше 5 файлів.');
+  }
+
   const timestamp = getTimestamp();
-  updateApplicationStageFinalFileStatement.run(
+  const result = insertApplicationStageFileStatement.run(
+    applicationId,
+    stageId,
     file.filename,
     file.originalname,
     file.mimetype || 'application/octet-stream',
     file.size,
+    actor?.id ?? null,
     timestamp,
-    stageId,
-    applicationId,
   );
   updateApplicationTouchedStatement.run(timestamp, applicationId);
   const application = getApplicationById(applicationId);
   const updatedStage = application.stages.find((stage) => stage.id === stageId);
+  const uploadedFile = getApplicationStageFileById(Number(result.lastInsertRowid));
 
   recordAuditLog({
     actor,
@@ -4695,26 +4897,32 @@ export function setApplicationStageFinalFile(applicationId, stageId, file, actor
     entityType: 'application_stage',
     entityId: stageId,
     action: 'upload_final_file',
-    summary: `Додано остаточний файл етапу "${updatedStage.title}" у заяві ${application.applicationNumber}.`,
+    summary: `Додано остаточний файл "${uploadedFile.originalName}" до етапу "${updatedStage.title}" у заяві ${application.applicationNumber}.`,
     before: mapApplicationStage(currentStage),
     after: updatedStage,
   });
 
   return {
     application,
-    previousFileName: currentStage.finalFileStoredName || '',
+    previousFileName: '',
   };
 }
 
-export function clearApplicationStageFinalFile(applicationId, stageId, actor) {
-  const currentStage = getApplicationStageByIdStatement.get(stageId, applicationId);
+export function clearApplicationStageFinalFile(applicationId, fileId, actor) {
+  const currentFile = getApplicationStageFileById(fileId);
 
-  if (!currentStage) {
+  if (!currentFile || currentFile.applicationId !== applicationId) {
     return null;
   }
 
+  const currentApplication = getApplicationByIdStatement.get(applicationId);
+
+  if (isClosedApplicationStatus(currentApplication?.status)) {
+    throw new Error('Заяву закрито. Відновіть заяву, щоб змінювати файли етапів.');
+  }
+
   const timestamp = getTimestamp();
-  clearApplicationStageFinalFileStatement.run(timestamp, stageId, applicationId);
+  deleteApplicationStageFileStatement.run(fileId);
   updateApplicationTouchedStatement.run(timestamp, applicationId);
   const application = getApplicationById(applicationId);
 
@@ -4722,37 +4930,21 @@ export function clearApplicationStageFinalFile(applicationId, stageId, actor) {
     actor,
     stationId: application.stationId,
     entityType: 'application_stage',
-    entityId: stageId,
+    entityId: currentFile.stageId,
     action: 'delete_final_file',
-    summary: `Видалено остаточний файл етапу "${currentStage.title}" у заяві ${application.applicationNumber}.`,
-    before: mapApplicationStage(currentStage),
+    summary: `Видалено остаточний файл "${currentFile.originalName}" з етапу "${currentFile.stageTitle}" у заяві ${application.applicationNumber}.`,
+    before: currentFile,
   });
 
   return {
     application,
-    previousFileName: currentStage.finalFileStoredName || '',
+    previousFileName: currentFile.storedName || '',
   };
 }
 
-export function getApplicationStageFinalFile(stageId) {
-  const row = db.prepare(`
-    SELECT
-      application_stages.id AS stageId,
-      application_stages.application_id AS applicationId,
-      application_stages.title,
-      application_stages.final_file_stored_name AS storedName,
-      application_stages.final_file_original_name AS originalName,
-      application_stages.final_file_mime_type AS mimeType,
-      application_stages.final_file_size AS size
-    FROM application_stages
-    WHERE id = ?
-  `).get(stageId);
-
-  if (!row?.storedName) {
-    return null;
-  }
-
-  return row;
+export function getApplicationStageFileById(fileId) {
+  const row = getApplicationStageFileByIdStatement.get(fileId);
+  return row ? { ...mapApplicationStageFile(row), stageTitle: row.stageTitle } : null;
 }
 
 export function canAccessGeneratedDocument(user, document) {

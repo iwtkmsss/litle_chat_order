@@ -12,6 +12,7 @@ import { DashboardModal, StaffLayout } from './staff/StaffLayout';
 import { StationCreateForm, StationSettingsPanel } from './staff/StationSettingsPanel';
 import {
   getApplicationStatusTransitionOptions,
+  isClosedApplicationStatus,
 } from '../connectionContent';
 import {
   DEFAULT_APPLICATION_TYPE_ID,
@@ -192,6 +193,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
   const [retryingNotificationId, setRetryingNotificationId] = useState(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState(null);
   const [uploadingStageFileId, setUploadingStageFileId] = useState(null);
+  const [stageFileUploadProgress, setStageFileUploadProgress] = useState({});
   const [deletingStageFileId, setDeletingStageFileId] = useState(null);
   const [activeDashboardPage, setActiveDashboardPage] = useState(isAdmin ? 'registry' : 'people');
   const [activeModal, setActiveModal] = useState(null);
@@ -262,6 +264,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
 
   const selectedApplication =
     applications.find((application) => application.id === selectedApplicationId) ?? null;
+  const isSelectedApplicationClosed = isClosedApplicationStatus(selectedApplication?.status);
 
   const selectedApplicationStationId = applicationForm.stationId
     ? Number(applicationForm.stationId)
@@ -429,8 +432,13 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
     }
   }
 
-  async function handleSaveStage(stage) {
+  async function handleSaveStage(stage, overrideDraft = null) {
     if (!selectedApplication) {
+      return;
+    }
+
+    if (isSelectedApplicationClosed) {
+      setPanelMessage('Заяву завершено. Відновіть її, щоб змінювати етапи.');
       return;
     }
 
@@ -441,7 +449,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
       const response = await api.updateApplicationStage(
         selectedApplication.id,
         stage.id,
-        stageDrafts[stage.id],
+        overrideDraft ?? stageDrafts[stage.id],
       );
 
       setApplications((current) =>
@@ -459,6 +467,11 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
 
   async function handleSaveDeadlineData() {
     if (!selectedApplication) {
+      return;
+    }
+
+    if (isSelectedApplicationClosed) {
+      setPanelMessage('Заяву завершено. Відновіть її, щоб змінювати контрольні дати.');
       return;
     }
 
@@ -543,6 +556,11 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
       return;
     }
 
+    if (isSelectedApplicationClosed) {
+      setPanelMessage('Заяву завершено. Відновіть її, щоб генерувати документи.');
+      return;
+    }
+
     setGeneratingDocumentType(documentType);
     setPanelMessage('');
 
@@ -558,6 +576,11 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
   }
 
   async function handleDeleteGeneratedDocument(document) {
+    if (isSelectedApplicationClosed) {
+      setPanelMessage('Заяву завершено. Відновіть її, щоб прибирати документи.');
+      return;
+    }
+
     const confirmed = window.confirm(`Прибрати документ "${document.originalName}"?`);
 
     if (!confirmed) {
@@ -583,46 +606,64 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
       return;
     }
 
+    if (isSelectedApplicationClosed) {
+      setPanelMessage('Заяву завершено. Відновіть її, щоб змінювати файли етапів.');
+      return;
+    }
+
     setUploadingStageFileId(stage.id);
     setPanelMessage('');
 
     try {
-      const response = await api.uploadStageFinalFile(selectedApplication.id, stage.id, file);
+      setStageFileUploadProgress((current) => ({ ...current, [stage.id]: 0 }));
+      const response = await api.uploadStageFinalFile(selectedApplication.id, stage.id, file, (progress) => {
+        setStageFileUploadProgress((current) => ({ ...current, [stage.id]: progress }));
+      });
       setApplications((current) =>
         current.map((application) =>
           application.id === response.application.id ? response.application : application,
         ),
       );
-      setPanelMessage('Остаточний файл етапу додано.');
+      setPanelMessage('Файл етапу додано.');
     } catch (actionError) {
       setPanelMessage(actionError.message);
     } finally {
       setUploadingStageFileId(null);
+      setStageFileUploadProgress((current) => {
+        const next = { ...current };
+        delete next[stage.id];
+        return next;
+      });
     }
   }
 
-  async function handleDeleteStageFinalFile(stage) {
+  async function handleDeleteStageFinalFile(stage, file) {
     if (!selectedApplication) {
       return;
     }
 
-    const confirmed = window.confirm(`Прибрати остаточний файл етапу "${stage.title}"?`);
+    if (isSelectedApplicationClosed) {
+      setPanelMessage('Заяву завершено. Відновіть її, щоб змінювати файли етапів.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Прибрати файл "${file.originalName}" з етапу "${stage.title}"?`);
 
     if (!confirmed) {
       return;
     }
 
-    setDeletingStageFileId(stage.id);
+    setDeletingStageFileId(file.id);
     setPanelMessage('');
 
     try {
-      const response = await api.deleteStageFinalFile(selectedApplication.id, stage.id);
+      const response = await api.deleteStageFinalFile(selectedApplication.id, file.id);
       setApplications((current) =>
         current.map((application) =>
           application.id === response.application.id ? response.application : application,
         ),
       );
-      setPanelMessage('Остаточний файл етапу прибрано.');
+      setPanelMessage('Файл етапу прибрано.');
     } catch (actionError) {
       setPanelMessage(actionError.message);
     } finally {
@@ -742,6 +783,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
       onOpenStation={() => setActiveModal('station')}
       onOpenUser={() => setActiveModal('user')}
       onNavigate={onNavigate}
+      onPanelMessageClose={() => setPanelMessage('')}
       onRefresh={() => loadDashboard()}
       panelMessage={panelMessage}
       user={user}
@@ -757,8 +799,8 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
         </DashboardModal>
       ) : null}
 
-      {activeModal === 'user' ? (
-        <DashboardModal title={isAdmin ? 'Новий менеджер або замовник' : 'Новий замовник'} onClose={() => setActiveModal(null)}>
+      {activeModal === 'user' && isAdmin ? (
+        <DashboardModal title="Новий менеджер або замовник" onClose={() => setActiveModal(null)}>
           <UserCreateForm
             disabled={isCreatingUser}
             isAdmin={isAdmin}
@@ -898,6 +940,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
             onSaveDeadlineData={handleSaveDeadlineData}
             onSaveStatus={handleSaveStatus}
             isAdmin={isAdmin}
+            isDeadlineDataLocked={isSelectedApplicationClosed}
             selectedApplication={selectedApplication}
             setDeadlineDataDraft={setDeadlineDataDraft}
             setStatusDraft={setStatusDraft}
@@ -908,6 +951,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
             generatingDocumentType={generatingDocumentType}
             getGeneratedDocumentOptions={getGeneratedDocumentOptions}
             isAdmin={isAdmin}
+            isLocked={isSelectedApplicationClosed}
             deletingDocumentId={deletingDocumentId}
             onDeleteGeneratedDocument={handleDeleteGeneratedDocument}
             onGenerateDocument={handleGenerateDocument}
@@ -917,6 +961,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
 
           <ApplicationStagesPanel
             getStageDraft={getStageDraft}
+            isLocked={isSelectedApplicationClosed}
             deletingStageFileId={deletingStageFileId}
             onSaveStage={handleSaveStage}
             onDeleteStageFinalFile={handleDeleteStageFinalFile}
@@ -924,6 +969,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
             savingStageId={savingStageId}
             selectedApplication={selectedApplication}
             stageDrafts={stageDrafts}
+            stageFileUploadProgress={stageFileUploadProgress}
             uploadingStageFileId={uploadingStageFileId}
             updateStageDraft={updateStageDraft}
           />

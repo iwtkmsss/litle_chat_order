@@ -21,11 +21,13 @@ function getStageStatusOptions(stage, draft) {
 export function ApplicationStagesPanel({
   deletingStageFileId,
   getStageDraft,
+  isLocked = false,
   onDeleteStageFinalFile,
   onSaveStage,
   onUploadStageFinalFile,
   savingStageId,
   selectedApplication,
+  stageFileUploadProgress = {},
   stageDrafts,
   uploadingStageFileId,
   updateStageDraft,
@@ -57,6 +59,39 @@ export function ApplicationStagesPanel({
     });
   }
 
+  function startStage(stage, draft) {
+    if (!window.confirm(`Розпочати етап "${stage.title}"?`)) {
+      return;
+    }
+
+    const nextDraft = {
+      ...draft,
+      status: 'in_progress',
+      startedAt: draft.startedAt || getToday(),
+      completedAt: '',
+    };
+
+    updateStageDraft(stage.id, nextDraft);
+    onSaveStage(stage, nextDraft);
+  }
+
+  function completeStage(stage, draft) {
+    if (!window.confirm(`Завершити етап "${stage.title}"?`)) {
+      return;
+    }
+
+    const today = getToday();
+    const nextDraft = {
+      ...draft,
+      status: 'completed',
+      startedAt: draft.startedAt || today,
+      completedAt: draft.completedAt || today,
+    };
+
+    updateStageDraft(stage.id, nextDraft);
+    onSaveStage(stage, nextDraft);
+  }
+
   return (
     <section className="surface-card manager-card application-detail-grid__wide">
       <div className="section-header">
@@ -76,6 +111,9 @@ export function ApplicationStagesPanel({
           const draft = stageDrafts[stage.id] ?? getStageDraft(stage);
           const isExpanded = expandedStageIds.has(stage.id);
           const contentId = `stage-editor-${stage.id}`;
+          const finalFiles = stage.finalFiles ?? (stage.finalFile ? [stage.finalFile] : []);
+          const canUploadMoreFiles = finalFiles.length < 5;
+          const uploadProgress = stageFileUploadProgress[stage.id];
 
           return (
             <article className={isExpanded ? 'stage-editor is-expanded' : 'stage-editor'} key={stage.id}>
@@ -108,6 +146,7 @@ export function ApplicationStagesPanel({
                       <span>Стадія виконання</span>
                       <select
                         className="field-input"
+                        disabled={isLocked}
                         onChange={(event) => {
                           const nextStatus = event.target.value;
                           updateStageDraft(stage.id, {
@@ -131,6 +170,7 @@ export function ApplicationStagesPanel({
                       <span>Очікуваний строк</span>
                       <input
                         className="field-input"
+                        disabled={isLocked}
                         onChange={(event) => updateStageDraft(stage.id, { expectedAt: event.target.value })}
                         type="date"
                         value={draft.expectedAt}
@@ -141,6 +181,7 @@ export function ApplicationStagesPanel({
                       <span>Граничний строк</span>
                       <input
                         className="field-input"
+                        disabled={isLocked}
                         onChange={(event) => updateStageDraft(stage.id, { dueAt: event.target.value })}
                         type="date"
                         value={draft.dueAt}
@@ -151,6 +192,7 @@ export function ApplicationStagesPanel({
                       <span>Дата початку</span>
                       <input
                         className="field-input"
+                        disabled={isLocked}
                         onChange={(event) => updateStageDraft(stage.id, { startedAt: event.target.value })}
                         type="date"
                         value={draft.startedAt}
@@ -161,7 +203,7 @@ export function ApplicationStagesPanel({
                       <span>Виконано, дата виконання</span>
                       <input
                         className="field-input"
-                        disabled={draft.status !== 'completed'}
+                        disabled={isLocked || draft.status !== 'completed'}
                         onChange={(event) => updateStageDraft(stage.id, { completedAt: event.target.value })}
                         type="date"
                         value={draft.completedAt}
@@ -169,12 +211,12 @@ export function ApplicationStagesPanel({
                     </label>
 
                     <div className="field-block stage-final-file">
-                      <span>Остаточний файл етапу</span>
+                      <span>Остаточні файли етапу</span>
                       <div className="stage-final-file__control">
                         <label className="secondary-button file-button">
                           {uploadingStageFileId === stage.id ? '...' : 'Файл'}
                           <input
-                            disabled={uploadingStageFileId === stage.id}
+                            disabled={isLocked || uploadingStageFileId === stage.id || !canUploadMoreFiles}
                             onChange={(event) => {
                               const file = event.target.files?.[0];
                               event.target.value = '';
@@ -183,25 +225,18 @@ export function ApplicationStagesPanel({
                             type="file"
                           />
                         </label>
-                        {stage.finalFile ? (
-                          <a className="stage-final-file__name" href={apiUrl(`/api/application-stage-files/${stage.id}`)}>
-                            {stage.finalFile.originalName}
-                          </a>
+                        {uploadingStageFileId === stage.id ? (
+                          <div className="stage-final-file__progress-wrap">
+                            <div className="stage-final-file__progress" aria-label="Прогрес завантаження">
+                              <span style={{ width: `${uploadProgress ?? 0}%` }} />
+                            </div>
+                            <small>{uploadProgress ?? 0}%</small>
+                          </div>
+                        ) : finalFiles.length >= 5 ? (
+                          <span className="stage-final-file__empty">Ліміт 5 файлів</span>
                         ) : (
-                          <span className="stage-final-file__empty">Не додано</span>
+                          <span className="stage-final-file__empty">{finalFiles.length}/5 файлів</span>
                         )}
-                        {stage.finalFile ? (
-                          <button
-                            aria-label="Прибрати файл"
-                            className="icon-danger-button"
-                            disabled={deletingStageFileId === stage.id}
-                            onClick={() => onDeleteStageFinalFile(stage)}
-                            title="Прибрати файл"
-                            type="button"
-                          >
-                            ×
-                          </button>
-                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -210,6 +245,7 @@ export function ApplicationStagesPanel({
                     <span>Коментар для замовника</span>
                     <textarea
                       className="field-input field-textarea"
+                      disabled={isLocked}
                       onChange={(event) => updateStageDraft(stage.id, { publicNote: event.target.value })}
                       rows={3}
                       value={draft.publicNote}
@@ -220,6 +256,7 @@ export function ApplicationStagesPanel({
                     <label className="access-toggle">
                       <input
                         checked={draft.isVisible}
+                        disabled={isLocked}
                         onChange={(event) => updateStageDraft(stage.id, { isVisible: event.target.checked })}
                         type="checkbox"
                       />
@@ -228,14 +265,64 @@ export function ApplicationStagesPanel({
 
                     <span className="muted-copy">{stageStatusLabels[stage.status]}</span>
 
+                    <div className="stage-editor__quick-actions">
+                      <button
+                        className="secondary-button"
+                        disabled={isLocked || savingStageId === stage.id || draft.status === 'in_progress' || draft.status === 'completed'}
+                        onClick={() => startStage(stage, draft)}
+                        type="button"
+                      >
+                        Розпочати етап
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={isLocked || savingStageId === stage.id || draft.status === 'completed'}
+                        onClick={() => completeStage(stage, draft)}
+                        type="button"
+                      >
+                        Завершити етап
+                      </button>
+                    </div>
+
                     <button
                       className="primary-button"
-                      disabled={savingStageId === stage.id}
+                      disabled={isLocked || savingStageId === stage.id}
                       onClick={() => onSaveStage(stage)}
                       type="button"
                     >
-                      {savingStageId === stage.id ? 'Збереження...' : 'Зберегти етап'}
+                      {savingStageId === stage.id ? 'Збереження...' : 'Зберегти зміни'}
                     </button>
+                  </div>
+
+                  <div className="stage-final-file-list">
+                    <div className="stage-final-file-list__head">
+                      <span>Остаточні файли етапу</span>
+                      <small>{finalFiles.length}/5</small>
+                    </div>
+                    {finalFiles.length > 0 ? (
+                      finalFiles.map((file) => (
+                        <div className="stage-final-file-list__item" key={file.id}>
+                          <div className="stage-final-file-list__file">
+                            <a className="stage-final-file__name" href={apiUrl(`/api/application-stage-files/${file.id}`)}>
+                              {file.originalName}
+                            </a>
+                            <small>{Math.max(1, Math.round((file.size ?? 0) / 1024))} КБ</small>
+                          </div>
+                          <button
+                            aria-label="Прибрати файл"
+                            className="icon-danger-button"
+                            disabled={isLocked || deletingStageFileId === file.id}
+                            onClick={() => onDeleteStageFinalFile(stage, file)}
+                            title="Прибрати файл"
+                            type="button"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="muted-copy">Файли ще не додано.</p>
+                    )}
                   </div>
                 </div>
               ) : null}

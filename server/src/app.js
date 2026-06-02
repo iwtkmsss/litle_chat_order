@@ -27,7 +27,7 @@ import {
   getAttachmentById,
   getChatById,
   getEmailNotificationById,
-  getApplicationStageFinalFile,
+  getApplicationStageFileById,
   getGeneratedDocumentById,
   getPendingApplicationSession,
   getSessionUser,
@@ -83,7 +83,7 @@ import {
   normalizeQuestionnaireType,
   sanitizeQuestionnairePayload,
 } from './applicationFormSchema.js';
-import { isValidApplicationStatus } from './applicationStatusWorkflow.js';
+import { isClosedApplicationStatus, isValidApplicationStatus } from './applicationStatusWorkflow.js';
 import { normalizeRegion } from './ukraineRegions.js';
 import { removeStoredFiles, removeUploadedFiles, upload } from './uploads.js';
 import { retryEmailNotification, sendPreparedApplicationEmails } from './mailer.js';
@@ -1576,6 +1576,10 @@ export function createApp({ clientUrl }) {
           return sendError(response, 400, 'Некоректний тип документа.');
         }
 
+        if (isClosedApplicationStatus(request.application.status)) {
+          return sendError(response, 400, 'Заяву закрито. Відновіть заяву, щоб генерувати документи.');
+        }
+
         const questionnaireType = normalizeQuestionnaireType(request.application.appendixData?.questionnaire?.type);
 
         if (documentType === 'appendix4' && questionnaireType !== 'heat_use') {
@@ -1647,6 +1651,12 @@ export function createApp({ clientUrl }) {
       return sendError(response, 403, 'Доступ до документа заборонено.');
     }
 
+    const application = getApplicationById(document.applicationId);
+
+    if (isClosedApplicationStatus(application?.status)) {
+      return sendError(response, 400, 'Заяву закрито. Відновіть заяву, щоб прибирати документи.');
+    }
+
     const deletedDocument = deleteGeneratedDocument(documentId, request.auth.user);
 
     if (!deletedDocument) {
@@ -1695,34 +1705,38 @@ export function createApp({ clientUrl }) {
   );
 
   app.delete(
-    '/api/applications/:applicationId/stages/:stageId/final-file',
+    '/api/applications/:applicationId/stage-files/:fileId',
     requireAuth,
     requireStaff,
     requireApplicationAccess,
     async (request, response) => {
-      const stageId = validateInteger(request.params.stageId, 'Ідентифікатор етапу', { min: 1 });
-      const result = clearApplicationStageFinalFile(request.application.id, stageId, request.auth.user);
+      try {
+        const fileId = validateInteger(request.params.fileId, 'Ідентифікатор файлу', { min: 1 });
+        const result = clearApplicationStageFinalFile(request.application.id, fileId, request.auth.user);
 
-      if (!result) {
-        return sendError(response, 404, 'Етап не знайдено.');
+        if (!result) {
+          return sendError(response, 404, 'Файл етапу не знайдено.');
+        }
+
+        if (result.previousFileName) {
+          await removeStoredFiles([result.previousFileName]);
+        }
+
+        return response.json({ application: result.application });
+      } catch (error) {
+        return sendError(response, 400, error.message);
       }
-
-      if (result.previousFileName) {
-        await removeStoredFiles([result.previousFileName]);
-      }
-
-      return response.json({ application: result.application });
     },
   );
 
-  app.get('/api/application-stage-files/:stageId', requireAuth, (request, response) => {
-    const stageId = Number(request.params.stageId);
+  app.get('/api/application-stage-files/:fileId', requireAuth, (request, response) => {
+    const fileId = Number(request.params.fileId);
 
-    if (!Number.isInteger(stageId) || stageId < 1) {
-      return sendError(response, 400, 'Некоректний ідентифікатор етапу.');
+    if (!Number.isInteger(fileId) || fileId < 1) {
+      return sendError(response, 400, 'Некоректний ідентифікатор файлу.');
     }
 
-    const file = getApplicationStageFinalFile(stageId);
+    const file = getApplicationStageFileById(fileId);
 
     if (!file) {
       return sendError(response, 404, 'Файл етапу не знайдено.');

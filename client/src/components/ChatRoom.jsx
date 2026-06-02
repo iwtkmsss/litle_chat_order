@@ -84,6 +84,25 @@ export function ChatRoom({
     }
   }
 
+  function clearComposer() {
+    setBody('');
+    setFiles([]);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
+  function removeSelectedFile(fileToRemove) {
+    setFiles((current) =>
+      current.filter((file) => `${file.name}-${file.size}-${file.lastModified}` !== `${fileToRemove.name}-${fileToRemove.size}-${fileToRemove.lastModified}`),
+    );
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
   if (!chat) {
     return (
       <section className="surface-card thread-empty">
@@ -159,10 +178,14 @@ export function ChatRoom({
 
       <form className="surface-card composer-card" onSubmit={handleSubmit}>
         <div className="composer-head">
-          <h3>Нове повідомлення</h3>
+          <div>
+            <h3>Нове повідомлення</h3>
+            <p className="muted-copy">Напишіть відповідь і додайте файли за потреби.</p>
+          </div>
+          <span className="counter-chip">{files.length}</span>
         </div>
 
-        <label className="field-block">
+        <label className="field-block composer-message-field">
           <span>Текст повідомлення</span>
           <textarea
             className="field-input field-textarea"
@@ -173,23 +196,40 @@ export function ChatRoom({
           />
         </label>
 
-        <label className="field-block">
+        <label className="field-block composer-file-field">
           <span>Прикріпити файли</span>
-          <input
-            className="field-input field-input--file"
-            disabled={isSending}
-            multiple
-            onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-            ref={fileInputRef}
-            type="file"
-          />
+          <div className="composer-file-picker">
+            <label className="secondary-button file-button">
+              Обрати файли
+              <input
+                disabled={isSending}
+                multiple
+                onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+                ref={fileInputRef}
+                type="file"
+              />
+            </label>
+            <span>{files.length > 0 ? `${files.length} файл(и) вибрано` : 'Файли не вибрано'}</span>
+          </div>
         </label>
 
         {files.length > 0 ? (
           <div className="selected-files">
             {files.map((file) => (
-              <span className="selected-file" key={`${file.name}-${file.size}`}>
-                {file.name}
+              <span className="selected-file" key={`${file.name}-${file.size}-${file.lastModified}`}>
+                <span>
+                  <strong>{file.name}</strong>
+                  <small>{formatFileSize(file.size)}</small>
+                </span>
+                <button
+                  aria-label={`Прибрати файл ${file.name}`}
+                  className="icon-danger-button"
+                  disabled={isSending}
+                  onClick={() => removeSelectedFile(file)}
+                  type="button"
+                >
+                  ×
+                </button>
               </span>
             ))}
           </div>
@@ -201,14 +241,7 @@ export function ChatRoom({
           <button
             className="secondary-button"
             disabled={isSending}
-            onClick={() => {
-              setBody('');
-              setFiles([]);
-
-              if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-              }
-            }}
+            onClick={clearComposer}
             type="button"
           >
             Очистити

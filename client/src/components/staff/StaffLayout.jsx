@@ -1,4 +1,29 @@
 import { AppLogo } from '../AppLogo';
+import { ToastMessage } from '../ToastMessage';
+
+function getToastTone(message, fallbackTone = 'info') {
+  if (!message) {
+    return fallbackTone;
+  }
+
+  const normalized = String(message).toLocaleLowerCase('uk-UA');
+
+  if (
+    normalized.includes('не ') ||
+    normalized.includes('помил') ||
+    normalized.includes('заборон') ||
+    normalized.includes('некорект') ||
+    normalized.includes('не знайдено')
+  ) {
+    return 'error';
+  }
+
+  if (normalized.includes('заяву завершено') || normalized.includes('відновіть')) {
+    return 'warning';
+  }
+
+  return fallbackTone;
+}
 
 export function StaffLayout({
   activeDashboardPage,
@@ -14,10 +39,17 @@ export function StaffLayout({
   onNavigate,
   onRefresh,
   panelMessage,
+  onPanelMessageClose,
   user,
 }) {
   return (
     <main className="workspace-shell">
+      <ToastMessage
+        message={error || panelMessage}
+        onClose={error ? undefined : onPanelMessageClose}
+        tone={error ? 'error' : getToastTone(panelMessage, 'success')}
+      />
+
       <header className="workspace-header">
         <AppLogo onClick={() => onNavigate?.('/')} />
 
@@ -38,9 +70,11 @@ export function StaffLayout({
           <button className="primary-button" onClick={onOpenApplication} type="button">
             Нова заява
           </button>
-          <button className="secondary-button" onClick={onOpenUser} type="button">
-            {isAdmin ? 'Новий користувач' : 'Новий замовник'}
-          </button>
+          {isAdmin ? (
+            <button className="secondary-button" onClick={onOpenUser} type="button">
+              Новий користувач
+            </button>
+          ) : null}
           {isAdmin ? (
             <button className="secondary-button" onClick={onOpenStation} type="button">
               Нова станція
@@ -54,9 +88,6 @@ export function StaffLayout({
           </button>
         </div>
       </header>
-
-      {panelMessage ? <p className="manager-message">{panelMessage}</p> : null}
-      {error ? <p className="form-error manager-message">{error}</p> : null}
 
       <section className="dashboard-actions surface-card">
         <div>

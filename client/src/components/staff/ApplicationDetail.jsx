@@ -2,8 +2,8 @@ import { useState } from 'react';
 import {
   connectionTypeLabels,
   deadlineStatusLabels,
-  getApplicationStatusDescription,
   getApplicationStatusLabel,
+  isClosedApplicationStatus,
   roleLabels,
 } from '../../connectionContent';
 import { formatDate, formatDateTime } from '../../utils';
@@ -11,25 +11,39 @@ import { formatDate, formatDateTime } from '../../utils';
 const statusActionLabels = {
   accepted: 'Прийняти в роботу',
   needs_clarification: 'Повернути на доповнення',
-  rejected: 'Відхилити',
-  under_review: 'Передати на технічний розгляд',
-  technical_conditions_ready: 'Позначити ТУ підготовленими',
-  agreement_ready: 'Позначити договір підготовленим',
-  completed: 'Завершити заявку',
-  submitted: 'Повернути до нової заявки',
+  completed: 'Завершити роботу',
 };
 
 const statusCommentLabels = {
   needs_clarification: 'Що потрібно уточнити?',
-  rejected: 'Причина відхилення або повернення',
 };
 
 function getStatusActionLabel(currentStatus, nextStatus, fallbackLabel) {
-  if (currentStatus === 'needs_clarification' && nextStatus === 'accepted') {
-    return 'Прийняти повторно в роботу';
+  if (isClosedApplicationStatus(currentStatus) && nextStatus === 'accepted') {
+    return 'Відновити заяву';
   }
 
   return statusActionLabels[nextStatus] ?? fallbackLabel;
+}
+
+function getStatusConfirmationText(currentStatus, nextStatus) {
+  if (isClosedApplicationStatus(currentStatus) && nextStatus === 'accepted') {
+    return 'Відновити заяву та дозволити редагування?';
+  }
+
+  if (nextStatus === 'completed') {
+    return 'Завершити роботу із заявкою? Після завершення редагування буде заблоковано.';
+  }
+
+  if (nextStatus === 'needs_clarification') {
+    return 'Повернути заявку на доповнення замовнику?';
+  }
+
+  if (nextStatus === 'accepted') {
+    return 'Прийняти заявку в роботу?';
+  }
+
+  return 'Підтвердити зміну статусу заявки?';
 }
 
 export function ApplicationDetail({
@@ -37,6 +51,7 @@ export function ApplicationDetail({
   availableStatusOptions,
   deadlineDataDraft,
   disabledDeadlineData,
+  isDeadlineDataLocked = false,
   disabledStatus,
   getQuestionnaireFields,
   getQuestionnaireTypeDetails,
@@ -49,22 +64,29 @@ export function ApplicationDetail({
   statusDraft,
 }) {
   const [isFullInfoOpen, setIsFullInfoOpen] = useState(false);
-  const commentRequired = ['needs_clarification', 'rejected'].includes(statusDraft.status)
+  const commentRequired = statusDraft.status === 'needs_clarification'
     && statusDraft.status !== selectedApplication.status;
   const isStatusCommentMissing = commentRequired && !statusDraft.comment.trim();
-  const actionOptions = availableStatusOptions.filter(
-    (option) => !(selectedApplication.status === 'needs_clarification' && option.value === 'submitted'),
+  const actionOptions = availableStatusOptions.filter((option) =>
+    ['accepted', 'needs_clarification', 'completed'].includes(option.value),
   );
   const canChangeStatus = actionOptions.length > 0;
   const currentStatusLabel = getApplicationStatusLabel(selectedApplication.status, 'manager');
-  const currentStatusDescription = getApplicationStatusDescription(selectedApplication.status, 'manager');
 
   function selectStatusAction(status) {
     setStatusDraft({ status, comment: '' });
 
-    if (!['needs_clarification', 'rejected'].includes(status)) {
+    if (status !== 'needs_clarification' && window.confirm(getStatusConfirmationText(selectedApplication.status, status))) {
       onSaveStatus({ status, comment: '' });
     }
+  }
+
+  function confirmStatusAction() {
+    if (!window.confirm(getStatusConfirmationText(selectedApplication.status, statusDraft.status))) {
+      return;
+    }
+
+    onSaveStatus(statusDraft);
   }
 
   return (
@@ -76,13 +98,15 @@ export function ApplicationDetail({
             <h2>{selectedApplication.applicantFullName}</h2>
             <p className="muted-copy">{selectedApplication.objectAddress}</p>
           </div>
+          <span className={`application-status-chip application-status-pill--${selectedApplication.status}`}>
+            {currentStatusLabel}
+          </span>
         </div>
 
         <div className="detail-meta-grid">
           <span>{selectedApplication.stationName}</span>
           <span>Область: {selectedApplication.objectRegion || 'не вказано'}</span>
           <span>{connectionTypeLabels[selectedApplication.connectionType]}</span>
-          <span>{currentStatusLabel}</span>
           <span>Телефон: {selectedApplication.phone}</span>
           <span>Email: {selectedApplication.email || 'не вказано'}</span>
           <span>Дата заяви: {formatDate(selectedApplication.receivedAt)}</span>
@@ -94,15 +118,6 @@ export function ApplicationDetail({
             Повна інформація по заявці
           </button>
         </div>
-      </div>
-
-      <div className="appendix-data-view application-section--status">
-        <h3>Статус заявки</h3>
-        <p className="stage-note">
-          <strong>{currentStatusLabel}</strong>
-          <br />
-          {currentStatusDescription}
-        </p>
       </div>
 
       <div className="appendix-data-view application-section--actions">
@@ -126,7 +141,7 @@ export function ApplicationDetail({
           <div className="application-action-grid">
             {actionOptions.map((option) => (
               <button
-                className={option.value === 'rejected' ? 'danger-button' : 'secondary-button'}
+                className={option.value === 'completed' ? 'danger-button' : 'secondary-button'}
                 disabled={disabledStatus}
                 key={option.value}
                 onClick={() => selectStatusAction(option.value)}
@@ -158,9 +173,9 @@ export function ApplicationDetail({
             </label>
 
             <button
-              className={statusDraft.status === 'rejected' ? 'danger-button' : 'primary-button'}
+              className="primary-button"
               disabled={disabledStatus || isStatusCommentMissing}
-              onClick={() => onSaveStatus(statusDraft)}
+              onClick={confirmStatusAction}
               type="button"
             >
               {disabledStatus
@@ -175,10 +190,14 @@ export function ApplicationDetail({
       <DeadlineDataEditor
         deadlineDataDraft={deadlineDataDraft}
         disabled={disabledDeadlineData}
+        isLocked={isDeadlineDataLocked}
         onSave={onSaveDeadlineData}
         setDeadlineDataDraft={setDeadlineDataDraft}
       />
-      <StatusHistory entries={selectedApplication.statusHistory ?? []} />
+      <StatusHistory
+        stageEntries={selectedApplication.stageHistory ?? []}
+        statusEntries={selectedApplication.statusHistory ?? []}
+      />
 
       {isFullInfoOpen ? (
         <ApplicationFullInfoModal
@@ -266,22 +285,61 @@ function ApplicationFullInfoModal({
   );
 }
 
-function StatusHistory({ entries }) {
+function StatusHistory({ stageEntries, statusEntries }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const entries = [
+    ...statusEntries.map((entry) => ({ ...entry, historyType: 'application_status' })),
+    ...stageEntries.map((entry) => ({ ...entry, historyType: 'stage' })),
+  ].sort((left, right) => {
+    const byDate = new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+
+    if (byDate !== 0) {
+      return byDate;
+    }
+
+    return String(right.id).localeCompare(String(left.id));
+  });
+
   if (!entries.length) {
     return null;
   }
 
+  const visibleEntries = isExpanded ? entries : entries.slice(0, 6);
+  const hiddenCount = Math.max(0, entries.length - visibleEntries.length);
+
   return (
     <div className="appendix-data-view application-section--history">
-      <h3>Історія статусів</h3>
+      <div className="history-section-head">
+        <h3>Історія статусів</h3>
+        <span className="counter-chip">{entries.length}</span>
+      </div>
       <div className="email-log">
-        {entries.map((entry) => (
+        {visibleEntries.map((entry) => (
           <article className="email-log-item" key={entry.id}>
-            <strong>
-              {entry.fromStatus ? getApplicationStatusLabel(entry.fromStatus, 'manager') : 'Створено'}
-              {' → '}
-              {getApplicationStatusLabel(entry.toStatus, 'manager')}
-            </strong>
+            {entry.historyType === 'stage' ? (
+              <>
+                <strong>
+                  Етап: {entry.stageTitle}
+                </strong>
+                <span>
+                  {entry.fromStatus
+                    ? `${stageStatusLabel(entry.fromStatus)} → ${stageStatusLabel(entry.toStatus)}`
+                    : entry.summary}
+                </span>
+                {entry.toStartedAt && entry.fromStartedAt !== entry.toStartedAt ? (
+                  <span>Дата початку: {formatDate(entry.toStartedAt)}</span>
+                ) : null}
+                {entry.toCompletedAt && entry.fromCompletedAt !== entry.toCompletedAt ? (
+                  <span>Дата виконання: {formatDate(entry.toCompletedAt)}</span>
+                ) : null}
+              </>
+            ) : (
+              <strong>
+                {entry.fromStatus ? getApplicationStatusLabel(entry.fromStatus, 'manager') : 'Створено'}
+                {' → '}
+                {getApplicationStatusLabel(entry.toStatus, 'manager')}
+              </strong>
+            )}
             {entry.comment ? <span>{entry.comment}</span> : null}
             <small>
               {entry.changedByName || 'Система'} · {roleLabels[entry.changedByRole] ?? entry.changedByRole ?? 'система'} · {formatDateTime(entry.createdAt)}
@@ -289,8 +347,24 @@ function StatusHistory({ entries }) {
           </article>
         ))}
       </div>
+      {entries.length > 6 ? (
+        <button className="secondary-button history-toggle-button" onClick={() => setIsExpanded((current) => !current)} type="button">
+          {isExpanded ? 'Згорнути історію' : `Показати ще ${hiddenCount}`}
+        </button>
+      ) : null}
     </div>
   );
+}
+
+function stageStatusLabel(status) {
+  const labels = {
+    not_started: 'Не розпочато',
+    in_progress: 'Виконується',
+    completed: 'Виконано',
+    not_required: 'Не потрібно',
+  };
+
+  return labels[status] ?? status;
 }
 
 function DeadlineChecks({ checks }) {
@@ -310,7 +384,7 @@ function DeadlineChecks({ checks }) {
   );
 }
 
-function DeadlineDataEditor({ deadlineDataDraft, disabled, onSave, setDeadlineDataDraft }) {
+function DeadlineDataEditor({ deadlineDataDraft, disabled, isLocked = false, onSave, setDeadlineDataDraft }) {
   const fields = [
     ['invoiceIssuedAt', 'Дата отримання/видачі рахунку'],
     ['paymentDueAt', 'Граничний строк оплати'],
@@ -331,7 +405,7 @@ function DeadlineDataEditor({ deadlineDataDraft, disabled, onSave, setDeadlineDa
             <span>{label}</span>
             <input
               className="field-input"
-              disabled={disabled}
+              disabled={disabled || isLocked}
               onChange={(event) =>
                 setDeadlineDataDraft((current) => ({
                   ...current,
@@ -344,8 +418,8 @@ function DeadlineDataEditor({ deadlineDataDraft, disabled, onSave, setDeadlineDa
           </label>
         ))}
       </div>
-      <button className="primary-button" disabled={disabled} onClick={onSave} type="button">
-        {disabled ? 'Збереження...' : 'Зберегти контрольні дати'}
+      <button className="primary-button" disabled={disabled || isLocked} onClick={onSave} type="button">
+        {disabled ? 'Збереження...' : isLocked ? 'Заяву завершено' : 'Зберегти контрольні дати'}
       </button>
     </div>
   );

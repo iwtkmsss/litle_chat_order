@@ -264,18 +264,43 @@ export const api = {
     });
   },
 
-  uploadStageFinalFile(applicationId, stageId, file) {
+  uploadStageFinalFile(applicationId, stageId, file, onProgress) {
     const formData = new FormData();
     formData.append('file', file);
 
-    return request(`/api/applications/${applicationId}/stages/${stageId}/final-file`, {
-      method: 'POST',
-      body: formData,
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.open('POST', apiUrl(`/api/applications/${applicationId}/stages/${stageId}/final-file`));
+      xhr.withCredentials = true;
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onProgress?.(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        try {
+          const payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(payload);
+          } else {
+            reject(new Error(payload.error || 'Не вдалося завантажити файл.'));
+          }
+        } catch {
+          reject(new Error('Не вдалося обробити відповідь сервера.'));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Не вдалося завантажити файл.'));
+      xhr.send(formData);
     });
   },
 
-  deleteStageFinalFile(applicationId, stageId) {
-    return request(`/api/applications/${applicationId}/stages/${stageId}/final-file`, {
+  deleteStageFinalFile(applicationId, fileId) {
+    return request(`/api/applications/${applicationId}/stage-files/${fileId}`, {
       method: 'DELETE',
     });
   },

@@ -31,7 +31,7 @@ export function LoginScreen({
       ) : null}
 
       <label className="field-block">
-        <span>ПІБ або email</span>
+        <span>Email</span>
         <input
           autoComplete="username"
           className="field-input"

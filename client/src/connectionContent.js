@@ -92,16 +92,16 @@ export const APPLICATION_STATUS_DESCRIPTIONS_BY_ROLE = {
 };
 
 export const APPLICATION_STATUS_TRANSITIONS = {
-  submitted: ['accepted', 'needs_clarification', 'rejected'],
-  accepted: ['needs_clarification', 'under_review', 'rejected'],
-  needs_clarification: ['submitted', 'accepted', 'under_review', 'rejected'],
-  under_review: ['needs_clarification', 'technical_conditions_ready', 'rejected'],
-  technical_conditions_ready: ['agreement_ready', 'needs_clarification', 'rejected'],
-  agreement_ready: ['completed', 'needs_clarification', 'rejected'],
-  completed: [],
-  rejected: [],
-  draft: ['submitted', 'accepted', 'rejected'],
-  in_progress: ['accepted', 'needs_clarification', 'under_review', 'completed', 'rejected'],
+  submitted: ['accepted', 'needs_clarification'],
+  accepted: ['needs_clarification', 'completed'],
+  needs_clarification: ['accepted'],
+  under_review: ['needs_clarification', 'completed'],
+  technical_conditions_ready: ['needs_clarification', 'completed'],
+  agreement_ready: ['needs_clarification', 'completed'],
+  completed: ['accepted'],
+  rejected: ['accepted'],
+  draft: ['submitted', 'accepted'],
+  in_progress: ['accepted', 'needs_clarification', 'completed'],
 };
 
 export const applicationStatusLabels = APPLICATION_STATUS_LABELS;
@@ -123,15 +123,16 @@ export function getApplicationStatusDescription(status, role = 'customer') {
 
 export function getApplicationStatusTransitionOptions(status, { isAdmin = false, role = 'manager' } = {}) {
   const allowed = APPLICATION_STATUS_TRANSITIONS[status] ?? [];
-  const fallback = isAdmin
-    ? APPLICATION_STATUSES.filter((item) => item !== status && !['draft', 'in_progress'].includes(item))
-    : [];
-  const values = allowed.length > 0 ? allowed : fallback;
+  const values = allowed;
 
   return values.map((value) => ({
     value,
     label: getApplicationStatusLabel(value, role),
   }));
+}
+
+export function isClosedApplicationStatus(status) {
+  return ['completed', 'rejected'].includes(status);
 }
 
 export const roleLabels = {

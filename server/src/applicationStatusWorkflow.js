@@ -25,16 +25,16 @@ export const APPLICATION_STATUS_LABELS = {
 };
 
 export const APPLICATION_STATUS_TRANSITIONS = {
-  submitted: ['accepted', 'needs_clarification', 'rejected'],
-  accepted: ['needs_clarification', 'under_review', 'rejected'],
-  needs_clarification: ['submitted', 'accepted', 'under_review', 'rejected'],
-  under_review: ['needs_clarification', 'technical_conditions_ready', 'rejected'],
-  technical_conditions_ready: ['agreement_ready', 'needs_clarification', 'rejected'],
-  agreement_ready: ['completed', 'needs_clarification', 'rejected'],
-  completed: [],
-  rejected: [],
-  draft: ['submitted', 'accepted', 'rejected'],
-  in_progress: ['accepted', 'needs_clarification', 'under_review', 'completed', 'rejected'],
+  submitted: ['accepted', 'needs_clarification'],
+  accepted: ['needs_clarification', 'completed'],
+  needs_clarification: ['accepted'],
+  under_review: ['needs_clarification', 'completed'],
+  technical_conditions_ready: ['needs_clarification', 'completed'],
+  agreement_ready: ['needs_clarification', 'completed'],
+  completed: ['accepted'],
+  rejected: ['accepted'],
+  draft: ['submitted', 'accepted'],
+  in_progress: ['accepted', 'needs_clarification', 'completed'],
 };
 
 export function isValidApplicationStatus(status) {
@@ -51,6 +51,10 @@ export function doesApplicationStatusRequireComment(status) {
 
 export function isCustomerVisibleStatusComment(status) {
   return ['needs_clarification', 'rejected'].includes(status);
+}
+
+export function isClosedApplicationStatus(status) {
+  return ['completed', 'rejected'].includes(status);
 }
 
 export function assertApplicationStatusTransition({

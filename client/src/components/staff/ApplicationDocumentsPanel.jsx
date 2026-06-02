@@ -37,6 +37,7 @@ export function ApplicationDocumentsPanel({
   generatingDocumentType,
   getGeneratedDocumentOptions,
   isAdmin,
+  isLocked = false,
   onGenerateDocument,
   onDeleteGeneratedDocument,
   onEmailSent,
@@ -123,7 +124,7 @@ export function ApplicationDocumentsPanel({
           {getGeneratedDocumentOptions(selectedApplication).map(([type, label]) => (
             <button
               className="secondary-button"
-              disabled={Boolean(generatingDocumentType)}
+              disabled={isLocked || Boolean(generatingDocumentType)}
               key={type}
               onClick={() => onGenerateDocument(type)}
               type="button"
@@ -146,7 +147,7 @@ export function ApplicationDocumentsPanel({
               <button
                 aria-label="Прибрати документ"
                 className="icon-danger-button"
-                disabled={deletingDocumentId === document.id}
+                disabled={isLocked || deletingDocumentId === document.id}
                 onClick={() => onDeleteGeneratedDocument(document)}
                 title="Прибрати документ"
                 type="button"
