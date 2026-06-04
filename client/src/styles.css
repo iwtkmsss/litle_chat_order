@@ -890,6 +890,339 @@ p {
   margin-bottom: 18px;
 }
 
+.customer-progress-card {
+  border-left: 1px solid rgba(216, 226, 239, 0.92);
+  padding: clamp(16px, 2.2vw, 22px);
+}
+
+.customer-progress-card .application-progress {
+  display: grid;
+  gap: 16px;
+}
+
+.customer-progress-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid #d8e4ef;
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 247, 242, 0.94)),
+    #ffffff;
+}
+
+.customer-progress-overview__main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.customer-progress-overview h2 {
+  margin: 0;
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+  line-height: 1.16;
+}
+
+.customer-progress-overview .muted-copy {
+  max-width: 760px;
+}
+
+.customer-progress-meter {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 124px;
+  padding: 12px 14px;
+  border: 1px solid #cfe0ef;
+  border-radius: 14px;
+  background: #f1f7fc;
+  color: var(--color-primary-dark);
+  text-align: center;
+}
+
+.customer-progress-meter strong {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.customer-progress-meter span {
+  color: #5b6d80;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.customer-progress-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7eef5;
+}
+
+.customer-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fac703 0%, #3f7d58 100%);
+}
+
+.customer-progress-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customer-progress-facts span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid #d8e4ef;
+  border-radius: 999px;
+  background: #fbfdff;
+  color: #334154;
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+.customer-progress-alert {
+  margin: 0;
+  border-color: #ecd99a;
+  background: #fffaf0;
+}
+
+.customer-progress-section {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #d8e4ef;
+  border-left-width: 3px;
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.customer-progress-section--stages {
+  border-left-color: #3f7d58;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 252, 250, 0.98)),
+    #ffffff;
+}
+
+.customer-progress-section--documents {
+  border-left-color: #fac703;
+  background: #fffdf4;
+}
+
+.customer-progress-section--history {
+  border-left-color: #6f89a4;
+  background: #fbfdff;
+}
+
+.customer-progress-section__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.customer-progress-section__head > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.customer-progress-section__head h3 {
+  margin: 0;
+  font-family: inherit;
+  font-size: 1.08rem;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.customer-stage-timeline {
+  gap: 12px;
+}
+
+.customer-stage-row {
+  position: relative;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.customer-stage-row:not(:last-child)::before {
+  position: absolute;
+  top: 42px;
+  bottom: -12px;
+  left: 20px;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #cde7d5, #d9e4ec);
+  content: '';
+}
+
+.customer-stage-index {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.customer-stage-index span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #cfddeb;
+  border-radius: 999px;
+  background: #f4f8fb;
+  color: #334154;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.stage-row--in_progress .customer-stage-index span {
+  border-color: #b8cadc;
+  background: #e8f1fb;
+  color: var(--color-primary);
+}
+
+.stage-row--completed .customer-stage-index span {
+  border-color: #bddfc9;
+  background: #edf8f1;
+  color: #2f6847;
+}
+
+.stage-row--not_required .customer-stage-index span {
+  border-color: #d6dde5;
+  background: #f1f5f9;
+  color: #738091;
+}
+
+.customer-stage-row__body {
+  gap: 12px;
+  padding: 15px;
+  border-radius: 14px;
+  background: #f8fbfd;
+}
+
+.customer-stage-row .stage-row__head > div:first-child {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.customer-stage-row .stage-row__head h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.25;
+}
+
+.customer-stage-row .summary-pill-group {
+  flex: 0 0 auto;
+}
+
+.stage-status-badge {
+  border-color: #d3dee8;
+  background: #f1f5f9;
+  color: #52657b;
+}
+
+.stage-status-badge--in_progress {
+  border-color: #c8d9eb;
+  background: #e8f1fb;
+  color: var(--color-primary);
+}
+
+.stage-status-badge--completed {
+  border-color: #c9e7d5;
+  background: #edf8f1;
+  color: #2f6847;
+}
+
+.stage-status-badge--not_required {
+  color: #738091;
+}
+
+.customer-stage-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.customer-stage-meta span {
+  display: grid;
+  gap: 3px;
+  min-height: 54px;
+  padding: 9px 10px;
+  border: 1px solid #dde7ef;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #253548;
+  font-weight: 750;
+}
+
+.customer-stage-meta strong {
+  color: #68798c;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.customer-progress-empty {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px dashed #cfddeb;
+  border-radius: 12px;
+  background: #fbfdff;
+  color: var(--color-muted);
+  font-weight: 700;
+}
+
+.customer-progress-documents {
+  margin-top: 0;
+}
+
+.customer-progress-documents .document-chip {
+  background: #ffffff;
+}
+
+.customer-history-log {
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.customer-history-item {
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px 14px;
+  background: #ffffff;
+}
+
+.customer-history-item__marker {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: #6f89a4;
+  box-shadow: 0 0 0 5px rgba(111, 137, 164, 0.13);
+}
+
+.customer-history-item__body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.customer-history-item strong {
+  line-height: 1.25;
+}
+
+.customer-history-item span {
+  overflow-wrap: anywhere;
+}
+
 .customer-chat-section .thread-panel {
   gap: 14px;
 }
@@ -3393,6 +3726,55 @@ p {
   .customer-dashboard-card .customer-application-tab {
     flex-basis: 100%;
     max-width: 100%;
+  }
+
+  .customer-progress-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-progress-meter {
+    justify-items: start;
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .customer-progress-section {
+    padding: 14px;
+  }
+
+  .customer-progress-section__head {
+    flex-direction: column;
+  }
+
+  .customer-progress-section__head .summary-pill {
+    align-self: flex-start;
+  }
+
+  .customer-stage-row {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .customer-stage-row:not(:last-child)::before {
+    left: 16px;
+  }
+
+  .customer-stage-index span {
+    width: 30px;
+    height: 30px;
+  }
+
+  .customer-stage-row .summary-pill-group {
+    justify-content: flex-start;
+  }
+
+  .customer-stage-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-history-log {
+    max-height: none;
   }
 
   .workspace-nav {
