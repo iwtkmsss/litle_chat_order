@@ -2,52 +2,42 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import {
-  mapApplicationToConsumerQuestionnaireTemplateData,
-  mapApplicationToGeneratorQuestionnaireTemplateData,
-  mapApplicationToStatementTemplateData,
-} from '../src/documentFieldMapper.js';
+import PizZip from 'pizzip';
+
 import { generateApplicationDocument } from '../src/documentGenerator.js';
-import {
-  getAllKnownTemplateFields,
-  getExpectedTemplateFields,
-} from '../src/documentTemplateFields.js';
-import { inspectTemplatePlaceholders } from '../src/documentTemplateInspector.js';
-import {
-  getRegisteredTemplateEntries,
-  getTemplatePath,
-} from '../src/documentTemplateRegistry.js';
-import { renderDocxTemplate } from '../src/documentTemplateRenderer.js';
+import { getStaticDocumentPath } from '../src/documentTemplateRegistry.js';
 
 function createApplication(questionnaire) {
   return {
     id: 1,
     applicationNumber: 'TPL-001',
-    applicantFullName: 'Іваненко Іван Іванович',
+    applicantFullName: 'Customer Test',
     phone: '+380501112233',
-    email: 'ivanenko@example.com',
-    objectAddress: 'м. Суми, вул. Теплова, 1',
+    email: 'customer@example.com',
+    objectAddress: 'Object address, 1',
+    objectRegion: 'Test region',
     connectionType: 'standard',
     receivedAt: '2026-05-20',
-    stationName: 'Тестова станція',
+    responsibleName: 'Manager Test',
+    stationName: 'Station Test',
     station: {
-      name: 'Тестова станція',
+      name: 'Station Test',
       edrpou: '12345678',
-      address: 'м. Суми',
+      address: 'Station address',
       phone: '+380542000000',
       email: 'operator@example.com',
-      directorName: 'Директор Тестовий',
+      directorName: 'Director Test',
     },
     appendixData: {
       appendix3: {
-        operatorRecipient: 'Директору Тестовому',
-        mailingAddress: 'м. Суми, вул. Поштова, 2',
-        operatorName: 'Тестова станція',
-        objectName: 'Житловий будинок',
-        connectionReason: 'Нове приєднання',
-        representativeName: 'Іваненко І. І.',
+        operatorRecipient: 'Director Test',
+        mailingAddress: 'Customer mailing address',
+        operatorName: 'Station Test',
+        objectName: 'Object Test',
+        connectionReason: 'New connection',
+        representativeName: 'Representative Test',
         representativePhone: '+380501112233',
-        representativeEmail: 'ivanenko@example.com',
+        representativeEmail: 'representative@example.com',
       },
       questionnaire,
     },
@@ -56,23 +46,23 @@ function createApplication(questionnaire) {
 
 const consumerApplication = createApplication({
   type: 'heat_consumer',
-  customerName: 'Іваненко Іван Іванович',
-  customerAddress: 'м. Суми, вул. Поштова, 2',
-  customerDistrict: 'Зарічний',
-  customerEmail: 'ivanenko@example.com',
+  customerName: 'Customer Test',
+  customerAddress: 'Customer address',
+  customerDistrict: 'District Test',
+  customerEmail: 'customer@example.com',
   customerPhone: '+380501112233',
-  designOrganizationName: 'ТОВ Проєкт',
-  designOrganizationAddress: 'м. Суми',
-  designOrganizationEmail: 'project@example.com',
+  designOrganizationName: 'Design Org',
+  designOrganizationAddress: 'Design address',
+  designOrganizationEmail: 'design@example.com',
   designOrganizationPhone: '+380542111111',
-  objectName: 'Житловий будинок',
-  objectAddress: 'м. Суми, вул. Теплова, 1',
-  plannedWorks: 'Будівництво',
+  objectName: 'Object Test',
+  objectAddress: 'Object address, 1',
+  plannedWorks: 'Construction',
   constructionStartYear: '2026',
   commissioningYear: '2027',
   permittedHeatLoad: '0.25',
-  heatSupplyContractNumber: 'Д-123',
-  personalAccountNumber: 'ОС-55',
+  heatSupplyContractNumber: 'D-123',
+  personalAccountNumber: 'PA-55',
   additionalHeatLoad: '0.10',
   totalHeatLoad: '0.35',
   heatingLoad: '0.20',
@@ -80,113 +70,109 @@ const consumerApplication = createApplication({
   hotWaterAverageLoad: '0.05',
   ventilationLoad: '0.03',
   technologyLoad: '0.02',
-  projectDeveloper: 'Замовник',
-  constructionExecutor: 'Оператор',
-  existingHeatSource: 'Існуюча котельня',
-  heatObjectDescription: 'Житловий об’єкт',
-  thirdPartyConnection: 'так',
-  responseMethod: 'Електронною поштою',
-  notificationMethod: 'ivanenko@example.com',
+  projectDeveloper: 'Customer',
+  constructionExecutor: 'Operator',
+  existingHeatSource: 'Existing source',
+  heatObjectDescription: 'Heat object',
+  thirdPartyConnection: 'yes',
+  responseMethod: 'email',
+  notificationMethod: 'customer@example.com',
 });
 
 const generatorApplication = createApplication({
   type: 'heat_generator',
-  customerName: 'ТОВ Генерація',
-  customerAddress: 'м. Суми, вул. Енергії, 10',
-  customerDistrict: 'Ковпаківський',
+  customerName: 'Generator Test',
+  customerAddress: 'Generator address',
+  customerDistrict: 'Generator district',
   customerEmail: 'generator@example.com',
   customerPhone: '+380501110000',
-  designOrganizationName: 'ТОВ Енерго Проєкт',
-  designOrganizationAddress: 'м. Суми',
-  designOrganizationEmail: 'energy-project@example.com',
+  designOrganizationName: 'Generator Design Org',
+  designOrganizationAddress: 'Generator design address',
+  designOrganizationEmail: 'generator-design@example.com',
   designOrganizationPhone: '+380542222222',
-  objectName: 'Котельня',
-  objectAddress: 'м. Суми, вул. Енергії, 11',
-  plannedWorks: 'Реконструкція',
+  objectName: 'Generator Object',
+  objectAddress: 'Generator object address',
+  plannedWorks: 'Reconstruction',
   constructionStartYear: '2026',
   commissioningYear: '2028',
   permittedHeatLoad: '1.5',
-  heatSupplyContractNumber: 'Г-987',
+  heatSupplyContractNumber: 'G-987',
   additionalCapacity: '0.5',
   totalCapacity: '2.0',
-  projectDeveloper: 'Оператор',
-  constructionExecutor: 'Інший суб’єкт господарювання',
-  heatObjectDescription: 'Когенераційна установка',
-  thirdPartyConnection: 'ні',
-  responseMethod: 'Поштою',
-  notificationMethod: 'м. Суми, вул. Енергії, 10',
+  projectDeveloper: 'Operator',
+  constructionExecutor: 'Contractor',
+  heatObjectDescription: 'Generator heat object',
+  thirdPartyConnection: 'no',
+  responseMethod: 'post',
+  notificationMethod: 'Generator address',
 });
 
-const registryEntries = getRegisteredTemplateEntries();
-assert.equal(registryEntries.length, 3);
+function documentXml(buffer) {
+  const zip = new PizZip(buffer);
+  const file = zip.file('word/document.xml');
 
-for (const entry of registryEntries) {
-  await fs.access(entry.templatePath);
+  assert.ok(file, 'word/document.xml is missing');
+
+  return file.asText();
+}
+
+function bodyContentWithoutSection(xml) {
+  const open = xml.match(/<w:body\b[^>]*>/);
+  assert.ok(open?.index !== undefined, 'document body is missing');
+
+  const bodyStart = open.index + open[0].length;
+  const bodyEnd = xml.lastIndexOf('</w:body>');
+  assert.notEqual(bodyEnd, -1, 'document body is not closed');
+
+  const body = xml.slice(bodyStart, bodyEnd);
+  const section = body.match(/<w:sectPr\b[\s\S]*<\/w:sectPr>\s*$/)?.[0] ?? '';
+
+  return section ? body.slice(0, -section.length) : body;
 }
 
 const checks = [
-  {
-    documentType: 'appendix3',
-    application: consumerApplication,
-    data: mapApplicationToStatementTemplateData(consumerApplication),
-  },
-  {
-    documentType: 'appendix4',
-    application: consumerApplication,
-    data: mapApplicationToConsumerQuestionnaireTemplateData(consumerApplication),
-  },
-  {
-    documentType: 'appendix5',
-    application: generatorApplication,
-    data: mapApplicationToGeneratorQuestionnaireTemplateData(generatorApplication),
-  },
+  { documentType: 'appendix1', application: consumerApplication, expectedValue: 'Station Test' },
+  { documentType: 'appendix2', application: consumerApplication, expectedValue: 'TPL-001' },
+  { documentType: 'appendix3', application: consumerApplication, expectedValue: 'New connection' },
+  { documentType: 'appendix4', application: consumerApplication, expectedValue: 'PA-55' },
+  { documentType: 'appendix5', application: generatorApplication, expectedValue: '0.5' },
 ];
 
 const results = [];
 
 for (const check of checks) {
-  const applicationType = check.application.appendixData.questionnaire.type;
-  const templatePath = getTemplatePath(check.documentType, applicationType);
-  assert.ok(templatePath, `Template path is missing for ${check.documentType}`);
+  const staticDocumentPath = getStaticDocumentPath(check.documentType);
+  assert.ok(staticDocumentPath, `Static document path is missing for ${check.documentType}`);
+  await fs.access(staticDocumentPath);
 
-  if (check.documentType === 'appendix4') {
-    assert.equal(check.data.additionalCapacity, undefined);
-    assert.equal(check.data.totalCapacity, undefined);
-  }
+  const staticXml = documentXml(await fs.readFile(staticDocumentPath));
+  const staticSignature = bodyContentWithoutSection(staticXml).trim().slice(0, 300);
+  assert.ok(staticSignature, `Static body is empty for ${check.documentType}`);
 
-  if (check.documentType === 'appendix5') {
-    assert.equal(check.data.personalAccountNumber, undefined);
-    assert.equal(check.data.heatingLoad, undefined);
-  }
+  const generated = await generateApplicationDocument(check.application, check.documentType);
+  assert.ok(Buffer.isBuffer(generated.buffer));
+  assert.ok(generated.buffer.length > 0);
 
-  const inspection = await inspectTemplatePlaceholders(
-    templatePath,
-    getExpectedTemplateFields(check.documentType, applicationType),
-    getAllKnownTemplateFields(),
-  );
+  const generatedXml = documentXml(generated.buffer);
+  const breakIndex = generatedXml.indexOf('<w:br w:type="page"/>');
+  assert.notEqual(breakIndex, -1, `${check.documentType} has no page break before the static document`);
 
-  if (!inspection.ready) {
-    const fallbackDocument = await generateApplicationDocument(check.application, check.documentType);
-    assert.ok(Buffer.isBuffer(fallbackDocument.buffer));
-    assert.ok(fallbackDocument.buffer.length > 0);
-    results.push(`${check.documentType}: fallback generation (${inspection.missingFields.length} missing, ${inspection.unknownFields.length} unknown, ${inspection.fragmentedFields.length} fragmented)`);
-    continue;
-  }
+  const dataIndex = generatedXml.indexOf(check.application.applicationNumber);
+  assert.ok(dataIndex !== -1 && dataIndex < breakIndex, `${check.documentType} does not put application data before the page break`);
 
-  try {
-    const templateBuffer = await renderDocxTemplate(templatePath, check.data);
-    assert.ok(Buffer.isBuffer(templateBuffer));
-    assert.ok(templateBuffer.length > 0);
-    results.push(`${check.documentType}: template generation (${path.basename(templatePath)})`);
-  } catch (error) {
-    const fallbackDocument = await generateApplicationDocument(check.application, check.documentType);
-    assert.ok(Buffer.isBuffer(fallbackDocument.buffer));
-    assert.ok(fallbackDocument.buffer.length > 0);
-    results.push(`${check.documentType}: fallback generation (${error.message})`);
-  }
+  const dataPageXml = generatedXml.slice(0, breakIndex);
+  assert.ok(dataPageXml.includes(check.expectedValue), `${check.documentType} does not expose expected data on the data page`);
+  assert.ok(!dataPageXml.includes('{'), `${check.documentType} still exposes placeholder syntax on the data page`);
+  assert.ok(!dataPageXml.includes('Плейсхолдер'), `${check.documentType} still renders the placeholder/source column`);
+  assert.ok(!dataPageXml.includes('\u2014'), `${check.documentType} still renders empty dash values on the data page`);
+
+  const staticIndex = generatedXml.indexOf(staticSignature);
+  assert.ok(staticIndex > breakIndex, `${check.documentType} does not preserve static body after the page break`);
+
+  results.push(`${check.documentType}: ${path.basename(staticDocumentPath)}`);
 }
 
-console.log('OK: template generation checks passed.');
+console.log('OK: document generation checks passed.');
 for (const result of results) {
   console.log(`- ${result}`);
 }

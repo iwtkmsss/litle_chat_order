@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import {
+  CONNECTION_REASON_OPTIONS,
   DEFAULT_APPLICATION_TYPE_ID,
   createEmptyQuestionnaireValues,
+  getConnectionReasonLabel,
   getApplicationTypeConfig,
   getApplicationTypeOptions,
 } from '../config/applicationFormConfig';
@@ -201,7 +203,7 @@ export function PublicApplicationForm({
     ['Тип установки', `${selectedApplicationType.appendix}. ${selectedApplicationType.title}`],
     ['Спосіб отримання відповіді', form.responseMethod],
     ['Контакт для відповіді', form.notificationMethod],
-    ['Підстава або причина звернення', form.connectionReason],
+    ['Причина приєднання', getConnectionReasonLabel(form.connectionReason)],
     ['Додаткова інформація для оператора', form.notes],
   ].filter(([, value]) => !isBlank(value))), [form, selectedApplicationType]);
 
@@ -361,6 +363,10 @@ export function PublicApplicationForm({
 
     if (stepIndex === 3) {
       validateQuestionnaireFields(errors);
+    }
+
+    if (stepIndex === 4) {
+      validateRequiredField(errors, 'connectionReason', form.connectionReason, 'Оберіть причину приєднання.');
     }
 
     setFieldErrors(errors);
@@ -671,18 +677,24 @@ export function PublicApplicationForm({
             Завантаження файлів у публічній формі буде підключено окремо. Якщо оператору знадобляться додаткові матеріали, заяву буде повернуто на доповнення.
           </p>
           <label className="field-block field-block--wide">
-            <span>Підстава або причина звернення <small className="field-unit">якщо відомо</small></span>
-            <textarea
-              className="field-input field-textarea"
+            <span>Причина приєднання <small className="field-unit">обов’язково</small></span>
+            <select
+              aria-describedby={fieldErrors.connectionReason ? 'connectionReason-error' : undefined}
+              aria-invalid={Boolean(fieldErrors.connectionReason)}
+              className="field-input"
               disabled={disabled}
               onChange={(event) => updateField('connectionReason', event.target.value)}
-              placeholder="Наприклад: нове підключення об’єкта, збільшення теплового навантаження, зміна вимог до надійності"
-              rows={3}
+              required
               value={form.connectionReason}
-            />
-            <small className="field-help">
-              Вкажіть причину звернення, якщо вона вам відома. Це допоможе оператору швидше опрацювати заяву.
-            </small>
+            >
+              <option disabled hidden value="">Оберіть причину</option>
+              {CONNECTION_REASON_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <FieldError id="connectionReason-error" message={fieldErrors.connectionReason} />
           </label>
           <label className="field-block field-block--wide">
             <span>Додаткова інформація для оператора <small className="field-unit">необов’язково</small></span>
@@ -694,13 +706,10 @@ export function PublicApplicationForm({
               rows={3}
               value={form.notes}
             />
-            <small className="field-help">
-              Це поле необов’язкове.
-            </small>
           </label>
         </section>
       ) : null}
-
+  
       {stepIndex === 5 ? (
         <section className="registration-section">
           <h2>Перевірка</h2>

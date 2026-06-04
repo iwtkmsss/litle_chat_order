@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  CONNECTION_REASON_OPTIONS,
   DEFAULT_APPLICATION_TYPE_ID,
   createEmptyQuestionnaireValues,
   getApplicationTypeConfig,
@@ -181,14 +182,21 @@ export function CustomerApplicationForm({
         </label>
 
         <label className="field-block field-block--wide">
-          <span>Підстава або причина приєднання</span>
-          <textarea
-            className="field-input field-textarea"
+          <span>Причина приєднання</span>
+          <select
+            className="field-input"
             disabled={disabled}
             onChange={(event) => updateField('connectionReason', event.target.value)}
-            rows={3}
+            required
             value={form.connectionReason}
-          />
+          >
+            <option disabled hidden value="">Оберіть причину</option>
+            {CONNECTION_REASON_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
       </section>
 

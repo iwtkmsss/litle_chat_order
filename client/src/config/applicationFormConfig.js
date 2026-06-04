@@ -8,6 +8,29 @@ export const LEGACY_QUESTIONNAIRE_TYPES = {
   heatGenerator: 'generation',
 };
 
+export const CONNECTION_REASON_OPTIONS = [
+  {
+    value: 'об’єкт, що не був підключений до теплових мереж',
+    label: 'Об’єкт, що не був підключений до теплових мереж',
+  },
+  {
+    value: 'збільшення теплового навантаження',
+    label: 'Збільшення теплового навантаження',
+  },
+  {
+    value: 'зміни вимог до надійності транспортування та якості теплової енергії',
+    label: 'Зміни вимог до надійності транспортування та якості теплової енергії',
+  },
+  {
+    value: 'зміни вимог нормативно-правових актів',
+    label: 'Зміни вимог нормативно-правових актів',
+  },
+];
+
+export function getConnectionReasonLabel(value) {
+  return CONNECTION_REASON_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
 const responseMethodOptions = [
   { value: '', label: 'Оберіть спосіб отримання відповіді' },
   { value: 'За місцем подання заяви', label: 'За місцем подання заяви' },

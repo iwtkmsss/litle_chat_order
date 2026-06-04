@@ -186,14 +186,22 @@ export function ApplicationDetail({
         ) : null}
       </div>
 
-      <DeadlineChecks checks={selectedApplication.deadlineChecks} />
-      <DeadlineDataEditor
-        deadlineDataDraft={deadlineDataDraft}
-        disabled={disabledDeadlineData}
-        isLocked={isDeadlineDataLocked}
-        onSave={onSaveDeadlineData}
-        setDeadlineDataDraft={setDeadlineDataDraft}
-      />
+      {isAdmin ? (
+        <>
+          <DeadlineChecks checks={selectedApplication.deadlineChecks} />
+          <DeadlineDataEditor
+            deadlineDataDraft={deadlineDataDraft}
+            disabled={disabledDeadlineData}
+            isLocked={isDeadlineDataLocked}
+            onSave={onSaveDeadlineData}
+            setDeadlineDataDraft={setDeadlineDataDraft}
+          />
+        </>
+      ) : null}
+      {/*
+        Тимчасово приховано у кабінеті менеджера. Щоб повернути менеджеру ці блоки,
+        прибрати умову isAdmin вище або додати окремий дозвіл для менеджера.
+      */}
       <StatusHistory
         stageEntries={selectedApplication.stageHistory ?? []}
         statusEntries={selectedApplication.statusHistory ?? []}

@@ -1,5 +1,6 @@
 import { DynamicApplicationFields } from '../forms/DynamicApplicationFields';
 import {
+  CONNECTION_REASON_OPTIONS,
   getApplicationTypeConfig,
   getApplicationTypeOptions,
 } from '../../config/applicationFormConfig';
@@ -262,13 +263,30 @@ function AppendixForm({
         {appendix3Fields.map(([key, label]) => (
           <label className="field-block" key={key}>
             <span>{label}</span>
-            <input
-              className="field-input"
-              disabled={disabled}
-              onChange={(event) => updateAppendixField('appendix3', key, event.target.value)}
-              type={key.toLowerCase().includes('email') ? 'email' : 'text'}
-              value={applicationForm.appendixData.appendix3[key]}
-            />
+            {key === 'connectionReason' ? (
+              <select
+                className="field-input"
+                disabled={disabled}
+                onChange={(event) => updateAppendixField('appendix3', key, event.target.value)}
+                required
+                value={applicationForm.appendixData.appendix3[key]}
+              >
+                <option disabled hidden value="">Оберіть причину</option>
+                {CONNECTION_REASON_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="field-input"
+                disabled={disabled}
+                onChange={(event) => updateAppendixField('appendix3', key, event.target.value)}
+                type={key.toLowerCase().includes('email') ? 'email' : 'text'}
+                value={applicationForm.appendixData.appendix3[key]}
+              />
+            )}
           </label>
         ))}
       </div>

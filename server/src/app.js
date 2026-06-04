@@ -144,6 +144,27 @@ function validateRequiredText(value, minLength, maxLength, fieldName) {
   return text;
 }
 
+const connectionReasonOptions = new Set([
+  'об’єкт, що не був підключений до теплових мереж',
+  'збільшення теплового навантаження',
+  'зміни вимог до надійності транспортування та якості теплової енергії',
+  'зміни вимог нормативно-правових актів',
+]);
+
+function validateConnectionReason(value, { required = false } = {}) {
+  const reason = validateOptionalText(value, 700, 'Причина приєднання');
+
+  if (required && !reason) {
+    throw new Error('Оберіть причину приєднання.');
+  }
+
+  if (reason && !connectionReasonOptions.has(reason)) {
+    throw new Error('Оберіть причину приєднання зі списку.');
+  }
+
+  return reason;
+}
+
 function validatePhone(value) {
   const phone = validateRequiredText(value, 7, 40, 'Номер телефону');
   const digits = phone.replace(/\D/g, '');
@@ -365,7 +386,7 @@ function validateQuestionnairePayload(input) {
   );
 }
 
-function validateAppendixData(input) {
+function validateAppendixData(input, { requireConnectionReason = false } = {}) {
   const data = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
 
   return {
@@ -374,7 +395,9 @@ function validateAppendixData(input) {
       mailingAddress: validateAppendixText(data.appendix3, 'mailingAddress', 700),
       operatorName: validateAppendixText(data.appendix3, 'operatorName'),
       objectName: validateAppendixText(data.appendix3, 'objectName', 700),
-      connectionReason: validateAppendixText(data.appendix3, 'connectionReason', 700),
+      connectionReason: validateConnectionReason(data.appendix3?.connectionReason, {
+        required: requireConnectionReason,
+      }),
       representativeName: validateAppendixText(data.appendix3, 'representativeName'),
       representativePhone: validateAppendixText(data.appendix3, 'representativePhone', 80),
       representativeEmail: validateAppendixText(data.appendix3, 'representativeEmail', 160),
@@ -398,7 +421,11 @@ function validateDeadlineData(input) {
   };
 }
 
-function validateApplicationPayload(input, actor, { defaultStatus = 'submitted' } = {}) {
+function validateApplicationPayload(
+  input,
+  actor,
+  { defaultStatus = 'submitted', requireConnectionReason = true } = {},
+) {
   const stationId = actor.role === 'admin'
     ? validateStationId(input?.stationId)
     : actor.stationId;
@@ -415,7 +442,7 @@ function validateApplicationPayload(input, actor, { defaultStatus = 'submitted' 
   );
   const responsibleName = validateOptionalText(input?.responsibleName, 160, 'Відповідальний працівник');
   const notes = validateOptionalText(input?.notes, 5000, 'Примітки');
-  const appendixData = validateAppendixData(input?.appendixData);
+  const appendixData = validateAppendixData(input?.appendixData, { requireConnectionReason });
   const deadlineData = validateDeadlineData(input?.deadlineData);
   const customerUserId = normalizeCustomerUserId(input?.customerUserId, stationId);
 
@@ -555,7 +582,7 @@ function validatePublicRegistrationPayload(input) {
   const connectionType = String(input?.connectionType ?? 'standard');
   const mailingAddress = validateRequiredText(input?.mailingAddress, 3, 700, 'Адреса для листування');
   const objectName = validateRequiredText(input?.objectName || objectAddress, 3, 700, 'Об’єкт у заяві');
-  const connectionReason = validateOptionalText(input?.connectionReason, 700, 'Причина приєднання');
+  const connectionReason = validateConnectionReason(input?.connectionReason, { required: true });
   const notes = validateOptionalText(input?.notes, 5000, 'Примітки');
   const questionnaireType = normalizeQuestionnaireType(input?.questionnaireType ?? input?.type);
 
@@ -584,7 +611,7 @@ function validatePublicRegistrationPayload(input) {
       objectRegion,
       notificationMethod: input?.notificationMethod || email,
     },
-  });
+  }, { requireConnectionReason: true });
 
   return {
     stationId,
@@ -611,7 +638,7 @@ function validateCustomerApplicationPayload(input, user) {
   const connectionType = String(input?.connectionType ?? 'standard');
   const mailingAddress = validateRequiredText(input?.mailingAddress, 3, 700, 'Адреса для листування');
   const objectName = validateRequiredText(input?.objectName || objectAddress, 3, 700, 'Об’єкт у заяві');
-  const connectionReason = validateOptionalText(input?.connectionReason, 700, 'Причина приєднання');
+  const connectionReason = validateConnectionReason(input?.connectionReason, { required: true });
   const notes = validateOptionalText(input?.notes, 5000, 'Примітки');
   const questionnaireType = normalizeQuestionnaireType(input?.questionnaireType ?? input?.type);
 
@@ -639,7 +666,7 @@ function validateCustomerApplicationPayload(input, user) {
       objectAddress,
       notificationMethod: input?.notificationMethod || email,
     },
-  });
+  }, { requireConnectionReason: true });
 
   return {
     stationId,
@@ -1384,6 +1411,7 @@ export function createApp({ clientUrl }) {
       try {
         const payload = validateApplicationPayload(request.body, request.auth.user, {
           defaultStatus: request.application.status,
+          requireConnectionReason: false,
         });
         const isAcceptingPendingApplication =
           !request.application.customerUserId

@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+
 import {
   AlignmentType,
   Document,
@@ -9,16 +11,13 @@ import {
 import {
   mapApplicationToConnectionAgreement,
   mapApplicationToConsumerQuestionnaire,
-  mapApplicationToConsumerQuestionnaireTemplateData,
   mapApplicationToGeneratorQuestionnaire,
-  mapApplicationToGeneratorQuestionnaireTemplateData,
   mapApplicationToStatementDocument,
-  mapApplicationToStatementTemplateData,
   mapApplicationToTechnicalConditions,
   valueOrEmpty,
 } from './documentFieldMapper.js';
-import { getTemplatePath } from './documentTemplateRegistry.js';
-import { renderDocxTemplate } from './documentTemplateRenderer.js';
+import { prependDocumentDataPage } from './documentDataPage.js';
+import { getStaticDocumentPath } from './documentTemplateRegistry.js';
 
 const documentTitles = {
   appendix1: 'Додаток 1. Типовий договір на приєднання до теплових мереж',
@@ -27,8 +26,6 @@ const documentTitles = {
   appendix4: 'Додаток 4. Опитувальний лист для тепловикористальних установок',
   appendix5: 'Додаток 5. Опитувальний лист для теплогенеруючих/когенераційних установок',
 };
-
-const templatedDocumentTypes = new Set(['appendix3', 'appendix4', 'appendix5']);
 
 function valueOrDash(value) {
   const text = valueOrEmpty(value);
@@ -262,34 +259,35 @@ function sanitizeFilePart(value) {
     .slice(0, 80) || 'document';
 }
 
-function questionnaireTypeOf(application) {
-  return application?.appendixData?.questionnaire?.type;
-}
+async function tryLoadStaticDocument(type) {
+  const staticDocumentPath = getStaticDocumentPath(type);
 
-function buildTemplateData(application, type) {
-  if (type === 'appendix3') {
-    return mapApplicationToStatementTemplateData(application);
-  }
-
-  if (type === 'appendix4') {
-    return mapApplicationToConsumerQuestionnaireTemplateData(application);
-  }
-
-  return mapApplicationToGeneratorQuestionnaireTemplateData(application);
-}
-
-async function tryGenerateFromTemplate(application, type) {
-  if (!templatedDocumentTypes.has(type)) {
+  if (!staticDocumentPath) {
     return null;
   }
 
-  const templatePath = getTemplatePath(type, questionnaireTypeOf(application));
-
-  if (!templatePath) {
-    throw new Error(`Template is not registered for ${type}.`);
+  try {
+    return await fs.readFile(staticDocumentPath);
+  } catch (error) {
+    console.warn(
+      `Static document is not available for ${type}, falling back to programmatic generator.`,
+      error?.message ?? error,
+    );
+    return null;
   }
+}
 
-  return renderDocxTemplate(templatePath, buildTemplateData(application, type));
+async function generateProgrammaticDocument(application, type) {
+  const doc = new Document({
+    sections: [
+      {
+        properties: {},
+        children: buildDocumentChildren(application, type),
+      },
+    ],
+  });
+
+  return Packer.toBuffer(doc);
 }
 
 export async function generateApplicationDocument(application, type) {
@@ -299,28 +297,13 @@ export async function generateApplicationDocument(application, type) {
     throw new Error('Невідомий тип документа.');
   }
 
-  let buffer = null;
-
-  try {
-    buffer = await tryGenerateFromTemplate(application, type);
-  } catch (error) {
-    console.warn(
-      `Template generation failed for ${type}, falling back to programmatic generator.`,
-      error?.message ?? error,
-    );
-  }
+  let buffer = await tryLoadStaticDocument(type);
 
   if (!buffer) {
-    const doc = new Document({
-      sections: [
-        {
-          properties: {},
-          children: buildDocumentChildren(application, type),
-        },
-      ],
-    });
-    buffer = await Packer.toBuffer(doc);
+    buffer = await generateProgrammaticDocument(application, type);
   }
+
+  buffer = prependDocumentDataPage(buffer, application, type, titleText);
 
   const originalName = `${sanitizeFilePart(application.applicationNumber)}-${type}.docx`;
 

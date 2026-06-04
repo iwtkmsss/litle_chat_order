@@ -320,9 +320,11 @@ export function ApplicationRegistry({
               </select>
             </label>
           ) : (
-            <div className="registry-station-note">
+            <div className="field-block registry-station-summary">
               <span>Станція</span>
-              <strong>{managerStationName}</strong>
+              <div className="registry-station-note">
+                <strong>{managerStationName}</strong>
+              </div>
             </div>
           )}
 

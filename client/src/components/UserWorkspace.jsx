@@ -133,20 +133,19 @@ export function UserWorkspace({ user, onLogout }) {
   }
 
   return (
-    <main className="workspace-shell">
+    <main className="workspace-shell customer-workspace-shell">
       <header className="workspace-header customer-workspace-header">
-        <div className="customer-workspace-header__title">
-          <div className="customer-workspace-header__eyebrow">
-            <AppLogo compact />
+        <div className="customer-workspace-header__identity">
+          <AppLogo className="customer-workspace-header__logo" />
+          <div className="customer-workspace-header__copy">
             <span className="section-kicker">Особистий кабінет замовника</span>
+            <p className="customer-workspace-header__name">{user.fullName}</p>
           </div>
-          <h1>Мої заяви</h1>
-          <p className="muted-copy">{user.fullName}</p>
         </div>
 
-        <div className="header-actions">
+        <div className="header-actions customer-workspace-header__actions">
           <button className="primary-button" onClick={openApplicationForm} type="button">
-            Подати нову заявку
+            Подати заявку
           </button>
           <button className="secondary-button" onClick={() => loadApplications()} type="button">
             Оновити
@@ -157,10 +156,10 @@ export function UserWorkspace({ user, onLogout }) {
         </div>
       </header>
 
-      {formMessage ? <p className="surface-card success-message">{formMessage}</p> : null}
+      {formMessage ? <p className="surface-card success-message customer-notice-card">{formMessage}</p> : null}
 
       {isApplicationFormOpen ? (
-        <section className="surface-card manager-card">
+        <section className="surface-card manager-card customer-form-card">
           <div className="section-header">
             <div>
               <span className="section-kicker">Нова заява</span>
@@ -182,7 +181,7 @@ export function UserWorkspace({ user, onLogout }) {
         </section>
       ) : null}
 
-      <section className="surface-card tabs-card">
+      <section className="surface-card tabs-card customer-dashboard-card">
         <div className="section-header">
           <div>
             <h2>Ваші заявки</h2>
@@ -247,7 +246,7 @@ export function UserWorkspace({ user, onLogout }) {
 
       {selectedApplication ? (
         <>
-          <section className="surface-card manager-card">
+          <section className="surface-card manager-card customer-application-summary-card">
             <div className="section-header">
               <div>
                 <span className="section-kicker">Заява {selectedApplication.applicationNumber}</span>
@@ -291,18 +290,18 @@ export function UserWorkspace({ user, onLogout }) {
             </section>
           ) : null}
 
-          <section className="surface-card manager-card">
+          <section className="surface-card manager-card customer-progress-card">
             <ApplicationProgress application={selectedApplication} />
           </section>
 
           {!hasGeneratedDocuments ? (
-            <section className="surface-card manager-card">
+            <section className="surface-card manager-card customer-documents-card">
               <h2>Документи</h2>
               <p className="muted-copy">Документи з’являться після підготовки оператором.</p>
             </section>
           ) : null}
 
-          <div ref={chatSectionRef}>
+          <div className="customer-chat-section" ref={chatSectionRef}>
             <ChatRoom
               chat={selectedApplication.chat}
               emptyTitle="Немає заяви"
