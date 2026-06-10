@@ -19,6 +19,7 @@ import {
   createEmptyQuestionnaireValues,
   getApplicationTypeConfig,
   getApplicationTypeFields,
+  getUnitFieldName,
 } from '../config/applicationFormConfig';
 
 function getToday() {
@@ -104,7 +105,11 @@ function getQuestionnaireTypeDetails(type) {
 }
 
 function getQuestionnaireFields(type) {
-  return getApplicationTypeFields(type).map((field) => [field.name, field.label]);
+  return getApplicationTypeFields(type).map((field) => [
+    field.name,
+    field.label,
+    field.unitOptions ? getUnitFieldName(field) : '',
+  ]);
 }
 
 const baseGeneratedDocumentOptions = [

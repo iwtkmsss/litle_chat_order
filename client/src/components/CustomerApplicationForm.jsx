@@ -5,6 +5,7 @@ import {
   createEmptyQuestionnaireValues,
   getApplicationTypeConfig,
   getApplicationTypeOptions,
+  getUnitFieldName,
 } from '../config/applicationFormConfig';
 import { DynamicApplicationFields } from './forms/DynamicApplicationFields';
 
@@ -54,6 +55,7 @@ function preserveSharedValues(current, nextType) {
     'notificationMethod',
     'heatObjectDescription',
     'permittedHeatLoad',
+    'permittedHeatLoadUnit',
   ];
 
   return {
@@ -63,6 +65,27 @@ function preserveSharedValues(current, nextType) {
     questionnaireType: nextType,
     type: nextType,
   };
+}
+
+function isBlank(value) {
+  return String(value ?? '').trim() === '';
+}
+
+function normalizeUnitFields(values, applicationType) {
+  const nextValues = { ...values };
+
+  applicationType.groups
+    .flatMap((group) => group.fields)
+    .filter((field) => field.unitOptions)
+    .forEach((field) => {
+      const unitFieldName = getUnitFieldName(field);
+
+      if (isBlank(nextValues[field.name])) {
+        nextValues[unitFieldName] = '';
+      }
+    });
+
+  return nextValues;
 }
 
 export function CustomerApplicationForm({
@@ -100,14 +123,14 @@ export function CustomerApplicationForm({
 
   async function handleSubmit(event) {
     event.preventDefault();
-    await onSubmit({
+    await onSubmit(normalizeUnitFields({
       ...form,
       customerName: form.customerName || user.fullName,
       customerAddress: form.mailingAddress,
       customerEmail: form.email,
       customerPhone: form.phone,
       notificationMethod: form.notificationMethod || form.email,
-    });
+    }, selectedApplicationType));
   }
 
   return (

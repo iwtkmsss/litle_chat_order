@@ -1,3 +1,4 @@
+import { getUnitFieldName } from '../../config/applicationFormConfig';
 import { formatUkrainianPhone } from '../../utils';
 
 export function DynamicApplicationFields({
@@ -39,6 +40,8 @@ export function DynamicApplicationFields({
                 }}
                 key={field.name}
                 onChange={onChange}
+                unitError={field.unitOptions ? errors[getUnitFieldName(field)] : ''}
+                unitValue={field.unitOptions ? values?.[getUnitFieldName(field)] ?? '' : ''}
                 value={values?.[field.name] ?? ''}
               />
             ))}
@@ -49,10 +52,17 @@ export function DynamicApplicationFields({
   );
 }
 
-function DynamicField({ disabled, error, field, onChange, value }) {
+function isBlank(value) {
+  return String(value ?? '').trim() === '';
+}
+
+function DynamicField({ disabled, error, field, onChange, unitError = '', unitValue = '', value }) {
+  const unitFieldName = field.unitOptions ? getUnitFieldName(field) : '';
+  const hasValue = !isBlank(value);
   const describedBy = [
     field.helpText ? `${field.name}-help` : '',
     error ? `${field.name}-error` : '',
+    unitError ? `${unitFieldName}-error` : '',
   ].filter(Boolean).join(' ') || undefined;
 
   function handleChange(event) {
@@ -60,7 +70,15 @@ function DynamicField({ disabled, error, field, onChange, value }) {
       ? formatUkrainianPhone(event.target.value)
       : event.target.value;
 
+    if (field.unitOptions && isBlank(nextValue)) {
+      onChange(unitFieldName, '');
+    }
+
     onChange(field.name, nextValue);
+  }
+
+  function handleUnitChange(event) {
+    onChange(unitFieldName, event.target.value);
   }
 
   if (field.type === 'textarea') {
@@ -134,6 +152,52 @@ function DynamicField({ disabled, error, field, onChange, value }) {
     );
   }
 
+  if (field.unitOptions) {
+    return (
+      <label className="field-block">
+        <FieldLabel field={field} />
+        <div
+          className={
+            error || unitError
+              ? 'unit-input-control unit-input-control--invalid'
+              : 'unit-input-control'
+          }
+        >
+          <input
+            aria-describedby={describedBy}
+            aria-invalid={Boolean(error || unitError)}
+            className="field-input"
+            disabled={disabled}
+            inputMode="decimal"
+            onChange={handleChange}
+            placeholder="0,25"
+            required={field.required}
+            type="text"
+            value={value}
+          />
+          <select
+            aria-label="Одиниця виміру"
+            aria-describedby={unitError ? `${unitFieldName}-error` : undefined}
+            aria-invalid={Boolean(unitError)}
+            className="field-unit-select"
+            disabled={disabled || !hasValue}
+            onChange={handleUnitChange}
+            required={hasValue}
+            value={hasValue ? unitValue : ''}
+          >
+            <option disabled hidden value="">Оберіть</option>
+            {field.unitOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <FieldMeta error={error} field={field} unitError={unitError} unitFieldName={unitFieldName} />
+      </label>
+    );
+  }
+
   return (
     <label className="field-block">
       <FieldLabel field={field} />
@@ -159,13 +223,13 @@ function FieldLabel({ field }) {
     <span>
       {field.label}
       {field.required ? <small className="field-unit"> обов’язково</small> : null}
-      {field.unit ? <small className="field-unit"> {field.unit}</small> : null}
+      {field.unit && !field.unitOptions ? <small className="field-unit"> {field.unit}</small> : null}
     </span>
   );
 }
 
-function FieldMeta({ error, field }) {
-  if (!field.helpText && !error) {
+function FieldMeta({ error, field, unitError = '', unitFieldName = '' }) {
+  if (!field.helpText && !error && !unitError) {
     return null;
   }
 
@@ -179,6 +243,11 @@ function FieldMeta({ error, field }) {
       {error ? (
         <small className="form-error field-error" id={`${field.name}-error`}>
           {error}
+        </small>
+      ) : null}
+      {unitError ? (
+        <small className="form-error field-error" id={`${unitFieldName}-error`}>
+          {unitError}
         </small>
       ) : null}
     </>

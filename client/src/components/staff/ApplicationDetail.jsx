@@ -46,6 +46,13 @@ function getStatusConfirmationText(currentStatus, nextStatus) {
   return 'Підтвердити зміну статусу заявки?';
 }
 
+function formatQuestionnaireValue(questionnaire, key, unitKey = '') {
+  const value = String(questionnaire?.[key] ?? '').trim();
+  const unit = unitKey ? String(questionnaire?.[unitKey] ?? '').trim() : '';
+
+  return value && unit ? `${value} ${unit}` : value;
+}
+
 export function ApplicationDetail({
   appendix3Fields,
   availableStatusOptions,
@@ -271,10 +278,10 @@ function ApplicationFullInfoModal({
               </span>
               {getQuestionnaireFields(selectedApplication.appendixData?.questionnaire?.type)
                 .filter(([key]) => selectedApplication.appendixData?.questionnaire?.[key])
-                .map(([key, label]) => (
+                .map(([key, label, unitKey]) => (
                   <span key={key}>
                     <strong>{label}</strong>
-                    {selectedApplication.appendixData.questionnaire[key]}
+                    {formatQuestionnaireValue(selectedApplication.appendixData.questionnaire, key, unitKey)}
                   </span>
                 ))}
             </div>

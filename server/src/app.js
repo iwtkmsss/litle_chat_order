@@ -79,7 +79,9 @@ import {
 } from './config.js';
 import { generateApplicationDocument } from './documentGenerator.js';
 import {
+  QUESTIONNAIRE_ALLOWED_HEAT_LOAD_UNITS,
   QUESTIONNAIRE_FIELD_LIMITS,
+  QUESTIONNAIRE_HEAT_LOAD_UNIT_FIELDS,
   normalizeQuestionnaireType,
   sanitizeQuestionnairePayload,
 } from './applicationFormSchema.js';
@@ -375,6 +377,22 @@ function validateAppendixText(input, key, maxLength = 500) {
 function validateQuestionnairePayload(input) {
   const questionnaireType = normalizeQuestionnaireType(input?.type);
   const sanitized = sanitizeQuestionnairePayload(questionnaireType, input);
+
+  for (const [valueField, unitField] of Object.entries(QUESTIONNAIRE_HEAT_LOAD_UNIT_FIELDS)) {
+    if (!sanitized[valueField]) {
+      continue;
+    }
+
+    const unit = String(input?.[unitField] ?? '').trim();
+
+    if (!unit) {
+      throw new Error('Оберіть одиницю виміру для заповненого теплового навантаження.');
+    }
+
+    if (!QUESTIONNAIRE_ALLOWED_HEAT_LOAD_UNITS.has(unit)) {
+      throw new Error('Некоректна одиниця виміру теплового навантаження.');
+    }
+  }
 
   return Object.fromEntries(
     Object.entries(sanitized).map(([key, value]) => [

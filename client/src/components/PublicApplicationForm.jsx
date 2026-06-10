@@ -6,6 +6,7 @@ import {
   getConnectionReasonLabel,
   getApplicationTypeConfig,
   getApplicationTypeOptions,
+  getUnitFieldName,
 } from '../config/applicationFormConfig';
 import { UKRAINE_REGIONS } from '../config/ukraineRegions';
 import {
@@ -104,6 +105,7 @@ function preserveSharedValues(current, nextType) {
     'notificationMethod',
     'heatObjectDescription',
     'permittedHeatLoad',
+    'permittedHeatLoadUnit',
   ];
 
   return {
@@ -160,6 +162,23 @@ function getVisibleQuestionnaireFields(applicationType) {
   return applicationType.groups
     .flatMap((group) => group.fields)
     .filter((field) => !hiddenFieldSet.has(field.name));
+}
+
+function normalizeUnitFields(values, applicationType) {
+  const nextValues = { ...values };
+
+  applicationType.groups
+    .flatMap((group) => group.fields)
+    .filter((field) => field.unitOptions)
+    .forEach((field) => {
+      const unitFieldName = getUnitFieldName(field);
+
+      if (isBlank(nextValues[field.name])) {
+        nextValues[unitFieldName] = '';
+      }
+    });
+
+  return nextValues;
 }
 
 function FieldError({ id, message }) {
@@ -330,6 +349,14 @@ export function PublicApplicationForm({
       if (field.type === 'tel') {
         validatePhoneField(errors, field.name, form[field.name]);
       }
+
+      if (field.unitOptions) {
+        const unitFieldName = getUnitFieldName(field);
+
+        if (!isBlank(form[field.name]) && isBlank(form[unitFieldName])) {
+          errors[unitFieldName] = 'Оберіть одиницю виміру.';
+        }
+      }
     });
 
     validateRequiredField(errors, 'responseMethod', form.responseMethod, 'Оберіть спосіб отримання відповіді.');
@@ -382,7 +409,7 @@ export function PublicApplicationForm({
     const normalizedPhone = normalizeUkrainianPhone(form.phone);
     const notificationMethod = form.notificationMethod || getDefaultNotificationContact(form);
 
-    return {
+    return normalizeUnitFields({
       ...form,
       phone: normalizedPhone,
       customerName: form.fullName,
@@ -398,7 +425,7 @@ export function PublicApplicationForm({
       constructionStartYear: form.constructionStartYear,
       commissioningYear: form.commissioningYear,
       notificationMethod,
-    };
+    }, selectedApplicationType);
   }
 
   async function handleSubmit(event) {

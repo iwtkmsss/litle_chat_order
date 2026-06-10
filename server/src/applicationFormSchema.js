@@ -35,6 +35,7 @@ const commonFields = [
   'constructionStartYear',
   'commissioningYear',
   'permittedHeatLoad',
+  'permittedHeatLoadUnit',
   'heatSupplyContractNumber',
   'projectDeveloper',
   'constructionExecutor',
@@ -47,19 +48,43 @@ const commonFields = [
 const heatConsumerFields = [
   'personalAccountNumber',
   'additionalHeatLoad',
+  'additionalHeatLoadUnit',
   'totalHeatLoad',
+  'totalHeatLoadUnit',
   'heatingLoad',
+  'heatingLoadUnit',
   'hotWaterMaxLoad',
+  'hotWaterMaxLoadUnit',
   'hotWaterAverageLoad',
+  'hotWaterAverageLoadUnit',
   'ventilationLoad',
+  'ventilationLoadUnit',
   'technologyLoad',
+  'technologyLoadUnit',
   'existingHeatSource',
 ];
 
 const heatGeneratorFields = [
   'additionalCapacity',
+  'additionalCapacityUnit',
   'totalCapacity',
+  'totalCapacityUnit',
 ];
+
+export const QUESTIONNAIRE_HEAT_LOAD_UNIT_FIELDS = {
+  permittedHeatLoad: 'permittedHeatLoadUnit',
+  additionalHeatLoad: 'additionalHeatLoadUnit',
+  totalHeatLoad: 'totalHeatLoadUnit',
+  heatingLoad: 'heatingLoadUnit',
+  hotWaterMaxLoad: 'hotWaterMaxLoadUnit',
+  hotWaterAverageLoad: 'hotWaterAverageLoadUnit',
+  ventilationLoad: 'ventilationLoadUnit',
+  technologyLoad: 'technologyLoadUnit',
+  additionalCapacity: 'additionalCapacityUnit',
+  totalCapacity: 'totalCapacityUnit',
+};
+
+export const QUESTIONNAIRE_ALLOWED_HEAT_LOAD_UNITS = new Set(['Гкал/год', 'МВт']);
 
 export const QUESTIONNAIRE_ALLOWED_FIELDS = {
   [LEGACY_QUESTIONNAIRE_TYPES.heatConsumer]: [
@@ -92,17 +117,27 @@ export const QUESTIONNAIRE_FIELD_LIMITS = {
   constructionStartYear: 20,
   commissioningYear: 20,
   permittedHeatLoad: 120,
+  permittedHeatLoadUnit: 40,
   heatSupplyContractNumber: 160,
   personalAccountNumber: 160,
   additionalHeatLoad: 120,
+  additionalHeatLoadUnit: 40,
   totalHeatLoad: 120,
+  totalHeatLoadUnit: 40,
   heatingLoad: 120,
+  heatingLoadUnit: 40,
   hotWaterMaxLoad: 120,
+  hotWaterMaxLoadUnit: 40,
   hotWaterAverageLoad: 120,
+  hotWaterAverageLoadUnit: 40,
   ventilationLoad: 120,
+  ventilationLoadUnit: 40,
   technologyLoad: 120,
+  technologyLoadUnit: 40,
   additionalCapacity: 120,
+  additionalCapacityUnit: 40,
   totalCapacity: 120,
+  totalCapacityUnit: 40,
   projectDeveloper: 1200,
   constructionExecutor: 1200,
   thirdPartyConnection: 20,
@@ -125,6 +160,16 @@ export function sanitizeQuestionnairePayload(type, payload) {
   for (const fieldName of allowedFields) {
     if (data[fieldName] !== undefined) {
       result[fieldName] = normalizeText(data[fieldName]);
+    }
+  }
+
+  for (const [valueField, unitField] of Object.entries(QUESTIONNAIRE_HEAT_LOAD_UNIT_FIELDS)) {
+    if (!Object.prototype.hasOwnProperty.call(result, unitField)) {
+      continue;
+    }
+
+    if (!result[valueField] || !QUESTIONNAIRE_ALLOWED_HEAT_LOAD_UNITS.has(result[unitField])) {
+      delete result[unitField];
     }
   }
 

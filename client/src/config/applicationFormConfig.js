@@ -54,6 +54,30 @@ const constructionExecutorOptions = [
   { value: 'Інший суб’єкт господарювання', label: 'Інший суб’єкт господарювання' },
 ];
 
+const heatLoadUnitOptions = [
+  { value: 'Гкал/год', label: 'Гкал/год' },
+  { value: 'МВт', label: 'МВт' },
+];
+
+export function getUnitFieldName(field) {
+  return field.unitFieldName ?? `${field.name}Unit`;
+}
+
+function withHeatLoadUnitOptions(groups) {
+  return groups.map((group) => ({
+    ...group,
+    fields: group.fields.map((field) => (
+      field.unit === 'Гкал/год або МВт'
+        ? {
+          ...field,
+          unitOptions: heatLoadUnitOptions,
+          unitFieldName: getUnitFieldName(field),
+        }
+        : field
+    )),
+  }));
+}
+
 const commonGroups = [
   {
     id: 'customer',
@@ -419,7 +443,7 @@ export const APPLICATION_TYPES = {
     documentType: 'appendix4',
     documentTitle:
       'Опитувальний лист для надання послуги з приєднання до теплових мереж для тепловикористальних установок',
-    groups: [...commonGroups, ...heatConsumerGroups],
+    groups: [...commonGroups, ...withHeatLoadUnitOptions(heatConsumerGroups)],
   },
   [APPLICATION_TYPE_IDS.heatGenerator]: {
     id: APPLICATION_TYPE_IDS.heatGenerator,
@@ -432,7 +456,7 @@ export const APPLICATION_TYPES = {
     documentType: 'appendix5',
     documentTitle:
       'Опитувальний лист для надання послуги з приєднання до теплових мереж для теплогенеруючих/когенераційних установок',
-    groups: [...commonGroups, ...heatGeneratorGroups],
+    groups: [...commonGroups, ...withHeatLoadUnitOptions(heatGeneratorGroups)],
   },
 };
 
@@ -468,6 +492,9 @@ export function getApplicationTypeFields(type) {
 export function createEmptyQuestionnaireValues(type = DEFAULT_APPLICATION_TYPE_ID) {
   return Object.fromEntries([
     ['type', normalizeApplicationTypeId(type)],
-    ...getApplicationTypeFields(type).map((field) => [field.name, '']),
+    ...getApplicationTypeFields(type).flatMap((field) => [
+      [field.name, ''],
+      ...(field.unitOptions ? [[getUnitFieldName(field), '']] : []),
+    ]),
   ]);
 }

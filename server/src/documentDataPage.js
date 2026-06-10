@@ -67,6 +67,13 @@ function displayValue(value) {
   return valueOrEmpty(value);
 }
 
+function withUnit(value, unit) {
+  const text = displayValue(value);
+  const unitText = displayValue(unit);
+
+  return text && unitText ? `${text} ${unitText}` : text;
+}
+
 function connectionTypeLabel(type) {
   return type === 'temporary'
     ? 'Тимчасове приєднання'
@@ -126,7 +133,17 @@ function compactRows(rows) {
 
 function additionalRowsFromObject(source, labels, prefix, usedKeys) {
   return Object.entries(source ?? {})
-    .filter(([key, value]) => key !== 'type' && !usedKeys.has(key) && !usedKeys.has(`${prefix}.${key}`) && displayValue(value))
+    .filter(([key, value]) => {
+      if (key === 'type' || usedKeys.has(key) || usedKeys.has(`${prefix}.${key}`) || !displayValue(value)) {
+        return false;
+      }
+
+      if (key.endsWith('Unit') && usedKeys.has(key.slice(0, -4))) {
+        return false;
+      }
+
+      return true;
+    })
     .map(([key, value]) => ({
       label: labels[key] ?? key,
       value: displayValue(value),
@@ -189,7 +206,18 @@ function buildAppendix1Rows(application, usedKeys) {
   addRow(rows, usedKeys, 'Вартість послуги з приєднання', 'connectionCost', data.connectionCost, { sourceKey: 'manual.connectionCost' });
   addRow(rows, usedKeys, 'Сума ПДВ', 'connectionVatAmount', '', { sourceKey: 'manual.connectionVatAmount' });
   addRow(rows, usedKeys, 'Дольова участь', 'participationCost', '', { sourceKey: 'manual.participationCost' });
-  addRow(rows, usedKeys, 'Загальне / заявлене теплове навантаження', 'totalHeatLoad', questionnaire.totalHeatLoad || questionnaire.totalCapacity, { sourceKey: 'questionnaire.totalHeatLoad' });
+  addRow(
+    rows,
+    usedKeys,
+    'Загальне / заявлене теплове навантаження',
+    'totalHeatLoad',
+    firstNonEmpty(
+      withUnit(questionnaire.totalHeatLoad, questionnaire.totalHeatLoadUnit),
+      withUnit(questionnaire.totalCapacity, questionnaire.totalCapacityUnit),
+    ),
+    { sourceKey: 'questionnaire.totalHeatLoad' },
+  );
+  markUsed(usedKeys, 'totalHeatLoadUnit', 'questionnaire.totalHeatLoadUnit', 'totalCapacity', 'totalCapacityUnit', 'questionnaire.totalCapacity', 'questionnaire.totalCapacityUnit');
 
   return rows;
 }
@@ -208,8 +236,30 @@ function buildAppendix2Rows(application, usedKeys) {
   addRow(rows, usedKeys, 'Номер договору теплопостачання / транспортування', 'heatSupplyContractNumber', questionnaire.heatSupplyContractNumber, { sourceKey: 'questionnaire.heatSupplyContractNumber' });
   addRow(rows, usedKeys, 'Термін введення в експлуатацію', 'commissioningYear', data.commissioningYear, { sourceKey: 'questionnaire.commissioningYear' });
   addRow(rows, usedKeys, 'Дозволене теплове навантаження', 'permittedHeatLoad', data.permittedHeatLoad, { sourceKey: 'questionnaire.permittedHeatLoad' });
-  addRow(rows, usedKeys, 'Додаткове навантаження / потужність', 'additionalLoadOrCapacity', questionnaire.additionalHeatLoad || questionnaire.additionalCapacity, { sourceKey: 'questionnaire.additionalHeatLoad' });
-  addRow(rows, usedKeys, 'Загальне навантаження / потужність', 'totalLoadOrCapacity', questionnaire.totalHeatLoad || questionnaire.totalCapacity, { sourceKey: 'questionnaire.totalHeatLoad' });
+  addRow(
+    rows,
+    usedKeys,
+    'Додаткове навантаження / потужність',
+    'additionalLoadOrCapacity',
+    firstNonEmpty(
+      withUnit(questionnaire.additionalHeatLoad, questionnaire.additionalHeatLoadUnit),
+      withUnit(questionnaire.additionalCapacity, questionnaire.additionalCapacityUnit),
+    ),
+    { sourceKey: 'questionnaire.additionalHeatLoad' },
+  );
+  markUsed(usedKeys, 'additionalHeatLoadUnit', 'questionnaire.additionalHeatLoadUnit', 'additionalCapacity', 'additionalCapacityUnit', 'questionnaire.additionalCapacity', 'questionnaire.additionalCapacityUnit');
+  addRow(
+    rows,
+    usedKeys,
+    'Загальне навантаження / потужність',
+    'totalLoadOrCapacity',
+    firstNonEmpty(
+      withUnit(questionnaire.totalHeatLoad, questionnaire.totalHeatLoadUnit),
+      withUnit(questionnaire.totalCapacity, questionnaire.totalCapacityUnit),
+    ),
+    { sourceKey: 'questionnaire.totalHeatLoad' },
+  );
+  markUsed(usedKeys, 'totalHeatLoadUnit', 'questionnaire.totalHeatLoadUnit', 'totalCapacity', 'totalCapacityUnit', 'questionnaire.totalCapacity', 'questionnaire.totalCapacityUnit');
   addRow(rows, usedKeys, 'Опалення', 'heatingLoad', data.heatingLoad, { sourceKey: 'questionnaire.heatingLoad' });
   addRow(rows, usedKeys, 'Гаряче водопостачання, середнє', 'hotWaterAverageLoad', data.hotWaterAverageLoad, { sourceKey: 'questionnaire.hotWaterAverageLoad' });
   addRow(rows, usedKeys, 'Гаряче водопостачання, максимальне', 'hotWaterMaxLoad', data.hotWaterMaxLoad, { sourceKey: 'questionnaire.hotWaterMaxLoad' });

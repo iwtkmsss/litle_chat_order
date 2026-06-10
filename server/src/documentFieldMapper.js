@@ -47,6 +47,13 @@ export function firstNonEmpty(...values) {
   return '';
 }
 
+function withUnit(value, unit) {
+  const text = valueOrEmpty(value);
+  const unitText = valueOrEmpty(unit);
+
+  return text && unitText ? `${text} ${unitText}` : text;
+}
+
 export function yesNo(value) {
   if (value === true) {
     return 'так';
@@ -235,16 +242,16 @@ export function mapApplicationToConsumerQuestionnaire(application) {
     ...common,
     type: APPLICATION_TYPES.heatConsumer,
     heatLoad: {
-      permittedHeatLoad: valueOrEmpty(questionnaire.permittedHeatLoad),
+      permittedHeatLoad: withUnit(questionnaire.permittedHeatLoad, questionnaire.permittedHeatLoadUnit),
       heatSupplyContractNumber: valueOrEmpty(questionnaire.heatSupplyContractNumber),
       personalAccountNumber: valueOrEmpty(questionnaire.personalAccountNumber),
-      additionalHeatLoad: valueOrEmpty(questionnaire.additionalHeatLoad),
-      totalHeatLoad: valueOrEmpty(questionnaire.totalHeatLoad),
-      heatingLoad: valueOrEmpty(questionnaire.heatingLoad),
-      hotWaterMaxLoad: valueOrEmpty(questionnaire.hotWaterMaxLoad),
-      hotWaterAverageLoad: valueOrEmpty(questionnaire.hotWaterAverageLoad),
-      ventilationLoad: valueOrEmpty(questionnaire.ventilationLoad),
-      technologyLoad: valueOrEmpty(questionnaire.technologyLoad),
+      additionalHeatLoad: withUnit(questionnaire.additionalHeatLoad, questionnaire.additionalHeatLoadUnit),
+      totalHeatLoad: withUnit(questionnaire.totalHeatLoad, questionnaire.totalHeatLoadUnit),
+      heatingLoad: withUnit(questionnaire.heatingLoad, questionnaire.heatingLoadUnit),
+      hotWaterMaxLoad: withUnit(questionnaire.hotWaterMaxLoad, questionnaire.hotWaterMaxLoadUnit),
+      hotWaterAverageLoad: withUnit(questionnaire.hotWaterAverageLoad, questionnaire.hotWaterAverageLoadUnit),
+      ventilationLoad: withUnit(questionnaire.ventilationLoad, questionnaire.ventilationLoadUnit),
+      technologyLoad: withUnit(questionnaire.technologyLoad, questionnaire.technologyLoadUnit),
     },
     technical: {
       ...common.technical,
@@ -261,10 +268,10 @@ export function mapApplicationToGeneratorQuestionnaire(application) {
     ...common,
     type: APPLICATION_TYPES.heatGenerator,
     capacity: {
-      permittedHeatLoad: valueOrEmpty(questionnaire.permittedHeatLoad),
+      permittedHeatLoad: withUnit(questionnaire.permittedHeatLoad, questionnaire.permittedHeatLoadUnit),
       heatSupplyContractNumber: valueOrEmpty(questionnaire.heatSupplyContractNumber),
-      additionalCapacity: valueOrEmpty(questionnaire.additionalCapacity),
-      totalCapacity: valueOrEmpty(questionnaire.totalCapacity),
+      additionalCapacity: withUnit(questionnaire.additionalCapacity, questionnaire.additionalCapacityUnit),
+      totalCapacity: withUnit(questionnaire.totalCapacity, questionnaire.totalCapacityUnit),
     },
   };
 }
