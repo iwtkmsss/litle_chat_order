@@ -133,9 +133,9 @@ function bodyContentWithoutSection(xml) {
 const checks = [
   { documentType: 'appendix1', application: consumerApplication, expectedValue: 'Station Test' },
   { documentType: 'appendix2', application: consumerApplication, expectedValue: 'TPL-001' },
-  { documentType: 'appendix3', application: consumerApplication, expectedValue: 'New connection' },
-  { documentType: 'appendix4', application: consumerApplication, expectedValue: 'PA-55' },
-  { documentType: 'appendix5', application: generatorApplication, expectedValue: '0.5' },
+  { documentType: 'appendix3', application: consumerApplication, expectedValue: 'New connection', expectedTemplateValue: 'Representative Test' },
+  { documentType: 'appendix4', application: consumerApplication, expectedValue: 'PA-55', expectedTemplateValue: 'Existing source' },
+  { documentType: 'appendix5', application: generatorApplication, expectedValue: '0.5', expectedTemplateValue: 'Generator heat object' },
 ];
 
 const results = [];
@@ -168,6 +168,15 @@ for (const check of checks) {
 
   const staticIndex = generatedXml.indexOf(staticSignature);
   assert.ok(staticIndex > breakIndex, `${check.documentType} does not preserve static body after the page break`);
+  assert.ok(!generatedXml.includes('{{'), `${check.documentType} still contains unresolved template placeholders`);
+
+  if (check.expectedTemplateValue) {
+    const templateXml = generatedXml.slice(breakIndex);
+    assert.ok(
+      templateXml.includes(check.expectedTemplateValue),
+      `${check.documentType} does not fill expected value inside the static template body`,
+    );
+  }
 
   results.push(`${check.documentType}: ${path.basename(staticDocumentPath)}`);
 }

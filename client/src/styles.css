@@ -1976,6 +1976,40 @@ p {
   margin-bottom: 16px;
 }
 
+.document-data-modal {
+  display: grid;
+  gap: 16px;
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: clamp(18px, 3vw, 26px);
+}
+
+.document-data-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.document-data-form .field-block {
+  min-width: 0;
+}
+
+.document-data-form .field-block span {
+  min-height: auto;
+}
+
+.document-data-textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.document-data-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
 .application-documents {
   margin-top: 18px;
 }
@@ -3927,6 +3961,7 @@ p {
   .questionnaire-type-grid,
   .appendix-form-section,
   .document-grid,
+  .document-data-form,
   .document-row,
   .public-action-grid,
   .connection-deadline-grid,

@@ -226,9 +226,9 @@ export function mapApplicationToStatementDocument(application) {
       date: valueOrEmpty(application?.receivedAt),
     },
     representative: {
-      name: valueOrEmpty(appendix.representativeName),
-      phone: valueOrEmpty(appendix.representativePhone),
-      email: valueOrEmpty(appendix.representativeEmail),
+      name: firstNonEmpty(appendix.representativeName, application?.applicantFullName),
+      phone: firstNonEmpty(appendix.representativePhone, application?.phone),
+      email: firstNonEmpty(appendix.representativeEmail, application?.email),
     },
     signatureName: firstNonEmpty(appendix.representativeName, application?.applicantFullName),
   };

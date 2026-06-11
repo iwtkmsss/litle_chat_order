@@ -77,7 +77,11 @@ import {
   sessionDurationMs,
   uploadsDir,
 } from './config.js';
-import { generateApplicationDocument } from './documentGenerator.js';
+import {
+  generateApplicationDocument,
+  getMissingDocumentFields,
+  sanitizeDocumentManualValues,
+} from './documentGenerator.js';
 import {
   QUESTIONNAIRE_ALLOWED_HEAT_LOAD_UNITS,
   QUESTIONNAIRE_FIELD_LIMITS,
@@ -101,8 +105,8 @@ function isUniqueConstraintError(error) {
   return error?.code === 'SQLITE_CONSTRAINT_UNIQUE';
 }
 
-function sendError(response, status, message) {
-  response.status(status).json({ error: message });
+function sendError(response, status, message, details = {}) {
+  response.status(status).json({ error: message, ...details });
 }
 
 function getStatusLookupRateKey(request, payload) {
@@ -1636,7 +1640,20 @@ export function createApp({ clientUrl }) {
           return sendError(response, 400, 'Додаток 5 формується для теплогенеруючої / когенераційної установки. Для цієї заявки оберіть Додаток 4.');
         }
 
-        const generated = await generateApplicationDocument(request.application, documentType);
+        const allowMissing = request.body?.allowMissing === true;
+        const manualValues = sanitizeDocumentManualValues(documentType, request.body?.manualValues);
+        const missingFields = getMissingDocumentFields(request.application, documentType, manualValues);
+
+        if (missingFields.length > 0 && !allowMissing) {
+          return sendError(
+            response,
+            422,
+            'Потрібно дозаповнити дані для документа.',
+            { documentType, missingFields },
+          );
+        }
+
+        const generated = await generateApplicationDocument(request.application, documentType, { allowMissing, manualValues });
         const storedName = `${Date.now()}-${crypto.randomUUID()}-${generated.originalName}`;
         const filePath = path.join(generatedDocumentsDir, storedName);
 

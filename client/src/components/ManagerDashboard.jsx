@@ -556,25 +556,37 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
     }
   }
 
-  async function handleGenerateDocument(documentType) {
+  async function handleGenerateDocument(documentType, manualValues = {}, options = {}) {
     if (!selectedApplication) {
-      return;
+      return { ok: false };
     }
 
     if (isSelectedApplicationClosed) {
       setPanelMessage('Заяву завершено. Відновіть її, щоб генерувати документи.');
-      return;
+      return { ok: false };
     }
 
     setGeneratingDocumentType(documentType);
     setPanelMessage('');
 
     try {
-      await api.generateApplicationDocument(selectedApplication.id, documentType);
+      await api.generateApplicationDocument(selectedApplication.id, documentType, manualValues, options);
       setPanelMessage('Документ згенеровано та збережено на сервері.');
       await loadDashboard({ silent: true });
+      return { ok: true };
     } catch (actionError) {
+      if (actionError.status === 422 && actionError.payload?.missingFields?.length) {
+        setPanelMessage(actionError.message);
+
+        return {
+          ok: false,
+          documentType: actionError.payload.documentType ?? documentType,
+          missingFields: actionError.payload.missingFields,
+        };
+      }
+
       setPanelMessage(actionError.message);
+      return { ok: false, error: actionError.message };
     } finally {
       setGeneratingDocumentType('');
     }

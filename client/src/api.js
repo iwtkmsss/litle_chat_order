@@ -251,10 +251,14 @@ export const api = {
     });
   },
 
-  generateApplicationDocument(applicationId, documentType) {
+  generateApplicationDocument(applicationId, documentType, manualValues = {}, options = {}) {
     return request(`/api/applications/${applicationId}/documents`, {
       method: 'POST',
-      body: JSON.stringify({ documentType }),
+      body: JSON.stringify({
+        allowMissing: options.allowMissing === true,
+        documentType,
+        manualValues,
+      }),
     });
   },
 

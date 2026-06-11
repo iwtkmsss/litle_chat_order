@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, apiUrl } from '../../api';
 import { formatDateTime } from '../../utils';
 
@@ -51,6 +51,78 @@ export function ApplicationDocumentsPanel({
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailModalError, setEmailModalError] = useState('');
+  const [documentDataPrompt, setDocumentDataPrompt] = useState(null);
+  const [documentManualValues, setDocumentManualValues] = useState({});
+  const [documentPromptError, setDocumentPromptError] = useState('');
+
+  useEffect(() => {
+    setDocumentDataPrompt(null);
+    setDocumentManualValues({});
+    setDocumentPromptError('');
+  }, [selectedApplication.id]);
+
+  async function requestDocumentGeneration(documentType, documentLabel, manualValues = {}, options = {}) {
+    const result = await onGenerateDocument(documentType, manualValues, options);
+
+    if (result?.missingFields?.length) {
+      setDocumentDataPrompt({
+        documentLabel,
+        documentType: result.documentType ?? documentType,
+        fields: result.missingFields,
+      });
+      setDocumentManualValues((current) => {
+        const nextValues = {
+          ...current,
+          ...manualValues,
+        };
+
+        result.missingFields.forEach((field) => {
+          if (!(field.key in nextValues)) {
+            nextValues[field.key] = '';
+          }
+        });
+
+        return nextValues;
+      });
+      setDocumentPromptError('');
+    }
+
+    return result;
+  }
+
+  function updateDocumentManualValue(key, value) {
+    setDocumentManualValues((current) => ({
+      ...current,
+      [key]: value,
+    }));
+    setDocumentPromptError('');
+  }
+
+  async function generateDocumentWithPromptValues() {
+    if (!documentDataPrompt) {
+      return;
+    }
+
+    const result = await requestDocumentGeneration(
+      documentDataPrompt.documentType,
+      documentDataPrompt.documentLabel,
+      documentManualValues,
+      { allowMissing: true },
+    );
+
+    if (result?.ok) {
+      setDocumentDataPrompt(null);
+      setDocumentManualValues({});
+      setDocumentPromptError('');
+    } else if (result?.error) {
+      setDocumentPromptError(result.error);
+    }
+  }
+
+  async function submitDocumentManualValues(event) {
+    event.preventDefault();
+    await generateDocumentWithPromptValues();
+  }
 
   async function openEmailModal() {
     setIsEmailModalOpen(true);
@@ -126,7 +198,7 @@ export function ApplicationDocumentsPanel({
               className="secondary-button"
               disabled={isLocked || Boolean(generatingDocumentType)}
               key={type}
-              onClick={() => onGenerateDocument(type)}
+              onClick={() => requestDocumentGeneration(type, label)}
               type="button"
             >
               {generatingDocumentType === type ? 'Генерація...' : `Згенерувати ${label}`}
@@ -158,6 +230,96 @@ export function ApplicationDocumentsPanel({
           ))}
         </div>
       </section>
+
+      {documentDataPrompt ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            aria-label="Дозаповнення даних для генерації документа"
+            aria-modal="true"
+            className="document-data-modal surface-card"
+            role="dialog"
+          >
+            <div className="modal-toolbar">
+              <div>
+                <span className="section-kicker">Генерація документа</span>
+                <h2>Дозаповніть дані</h2>
+                <p className="muted-copy">
+                  Для {documentDataPrompt.documentLabel} бракує кількох значень. Можете заповнити тільки потрібні поля або пропустити цей крок: тоді порожні місця в документі будуть заповнені прочерками.
+                </p>
+              </div>
+              <button
+                className="secondary-button"
+                onClick={() => setDocumentDataPrompt(null)}
+                type="button"
+              >
+                Закрити
+              </button>
+            </div>
+
+            {documentPromptError ? <p className="form-error">{documentPromptError}</p> : null}
+
+            <form className="document-data-form" onSubmit={submitDocumentManualValues}>
+              {documentDataPrompt.fields.map((field) => (
+                <label className="field-block" key={field.key}>
+                  <span>{field.label}</span>
+                  {field.options?.length ? (
+                    <select
+                      className="field-input"
+                      onChange={(event) => updateDocumentManualValue(field.key, event.target.value)}
+                      value={documentManualValues[field.key] ?? ''}
+                    >
+                      <option disabled value="">Оберіть значення</option>
+                      {field.options.map((option) => {
+                        const optionValue = typeof option === 'string' ? option : option.value;
+                        const optionLabel = typeof option === 'string' ? option : option.label;
+
+                        return (
+                          <option key={optionValue} value={optionValue}>
+                            {optionLabel}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  ) : field.inputType === 'textarea' ? (
+                    <textarea
+                      className="field-input field-textarea document-data-textarea"
+                      maxLength={field.maxLength}
+                      onChange={(event) => updateDocumentManualValue(field.key, event.target.value)}
+                      rows={3}
+                      value={documentManualValues[field.key] ?? ''}
+                    />
+                  ) : (
+                    <input
+                      className="field-input"
+                      maxLength={field.maxLength}
+                      onChange={(event) => updateDocumentManualValue(field.key, event.target.value)}
+                      value={documentManualValues[field.key] ?? ''}
+                    />
+                  )}
+                </label>
+              ))}
+
+              <div className="form-actions document-data-actions">
+                <button
+                  className="secondary-button"
+                  disabled={Boolean(generatingDocumentType)}
+                  onClick={generateDocumentWithPromptValues}
+                  type="button"
+                >
+                  Пропустити і згенерувати
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={Boolean(generatingDocumentType)}
+                  type="submit"
+                >
+                  {generatingDocumentType === documentDataPrompt.documentType ? 'Генерація...' : 'Заповнити і згенерувати'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
 
       {isAdmin ? (
         <section className="surface-card manager-card email-status-panel">

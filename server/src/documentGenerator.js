@@ -17,6 +17,12 @@ import {
   valueOrEmpty,
 } from './documentFieldMapper.js';
 import { prependDocumentDataPage } from './documentDataPage.js';
+import { fillDocumentTemplatePlaceholders } from './documentTemplateFiller.js';
+import {
+  getMissingDocumentFields,
+  prepareDocumentTemplateData,
+  usesDocumentTemplatePlaceholders,
+} from './documentTemplateValues.js';
 import { getStaticDocumentPath } from './documentTemplateRegistry.js';
 
 const documentTitles = {
@@ -290,22 +296,41 @@ async function generateProgrammaticDocument(application, type) {
   return Packer.toBuffer(doc);
 }
 
-export async function generateApplicationDocument(application, type) {
+export { getMissingDocumentFields, sanitizeDocumentManualValues } from './documentTemplateValues.js';
+
+export async function generateApplicationDocument(application, type, { allowMissing = false, manualValues = {} } = {}) {
   const titleText = documentTitles[type];
 
   if (!titleText) {
     throw new Error('Невідомий тип документа.');
   }
 
+  let documentApplication = application;
+  let templateValues = {};
+  const shouldFillPlaceholders = usesDocumentTemplatePlaceholders(type);
+
+  if (shouldFillPlaceholders) {
+    const prepared = prepareDocumentTemplateData(application, type, manualValues);
+
+    if (prepared.missingFields.length > 0 && !allowMissing) {
+      throw new Error('Потрібно дозаповнити дані для документа.');
+    }
+
+    documentApplication = prepared.application;
+    templateValues = prepared.values;
+  }
+
   let buffer = await tryLoadStaticDocument(type);
 
   if (!buffer) {
-    buffer = await generateProgrammaticDocument(application, type);
+    buffer = await generateProgrammaticDocument(documentApplication, type);
+  } else if (shouldFillPlaceholders) {
+    buffer = fillDocumentTemplatePlaceholders(buffer, templateValues);
   }
 
-  buffer = prependDocumentDataPage(buffer, application, type, titleText);
+  buffer = prependDocumentDataPage(buffer, documentApplication, type, titleText);
 
-  const originalName = `${sanitizeFilePart(application.applicationNumber)}-${type}.docx`;
+  const originalName = `${sanitizeFilePart(documentApplication.applicationNumber)}-${type}.docx`;
 
   return {
     buffer,

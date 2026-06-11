@@ -143,12 +143,14 @@ const checks = [
 
 for (const check of checks) {
   const generated = await generateApplicationDocument(check.application, check.documentType);
-  const xml = dataPageXml(documentXml(generated.buffer));
+  const fullXml = documentXml(generated.buffer);
+  const xml = dataPageXml(fullXml);
 
   for (const value of check.expectedValues) {
     assert.ok(xml.includes(value), `${check.title}: expected value "${value}" is missing from the data page`);
   }
 
+  assert.ok(!fullXml.includes('{{'), `${check.title}: generated document still contains unresolved placeholders`);
   assert.ok(!xml.includes('{'), `${check.title}: placeholder syntax should not be rendered`);
   assert.ok(!xml.includes('Плейсхолдер'), `${check.title}: placeholder/source column should not be rendered`);
   assert.ok(!xml.includes('\u2014'), `${check.title}: empty dash values should not be rendered`);
