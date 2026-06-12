@@ -113,11 +113,8 @@ function documentXml(buffer) {
   return file.asText();
 }
 
-function dataPageXml(xml) {
-  const breakIndex = xml.indexOf('<w:br w:type="page"/>');
-  assert.notEqual(breakIndex, -1, 'page break is missing');
-
-  return xml.slice(0, breakIndex);
+function visibleText(xml) {
+  return xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 }
 
 const checks = [
@@ -144,18 +141,16 @@ const checks = [
 for (const check of checks) {
   const generated = await generateApplicationDocument(check.application, check.documentType);
   const fullXml = documentXml(generated.buffer);
-  const xml = dataPageXml(fullXml);
+  const text = visibleText(fullXml);
 
   for (const value of check.expectedValues) {
-    assert.ok(xml.includes(value), `${check.title}: expected value "${value}" is missing from the data page`);
+    assert.ok(text.includes(value), `${check.title}: expected value "${value}" is missing from the generated template`);
   }
 
   assert.ok(!fullXml.includes('{{'), `${check.title}: generated document still contains unresolved placeholders`);
-  assert.ok(!xml.includes('{'), `${check.title}: placeholder syntax should not be rendered`);
-  assert.ok(!xml.includes('Плейсхолдер'), `${check.title}: placeholder/source column should not be rendered`);
-  assert.ok(!xml.includes('\u2014'), `${check.title}: empty dash values should not be rendered`);
+  assert.ok(!text.includes('Службові дані для заповнення документа'), `${check.title}: service data page should not be rendered`);
 
-  console.log(`${check.title}: compact data page verified`);
+  console.log(`${check.title}: template placeholders verified`);
 }
 
-console.log('OK: compact data-page checks passed.');
+console.log('OK: template placeholder checks passed.');

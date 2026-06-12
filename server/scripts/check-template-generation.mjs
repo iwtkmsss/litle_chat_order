@@ -123,6 +123,14 @@ function visibleText(xml) {
   return xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 }
 
+function templateStartText(xml) {
+  const text = visibleText(xml).trim();
+  const placeholderIndex = text.indexOf('{{');
+  const stablePrefix = placeholderIndex === -1 ? text : text.slice(0, placeholderIndex).trim();
+
+  return stablePrefix.slice(0, 120);
+}
+
 function bodyContentWithoutSection(xml) {
   const open = xml.match(/<w:body\b[^>]*>/);
   assert.ok(open?.index !== undefined, 'document body is missing');
@@ -138,11 +146,11 @@ function bodyContentWithoutSection(xml) {
 }
 
 const checks = [
-  { documentType: 'appendix1', application: consumerApplication, expectedValue: 'Station Test' },
-  { documentType: 'appendix2', application: consumerApplication, expectedValue: 'TPL-001' },
-  { documentType: 'appendix3', application: consumerApplication, expectedValue: 'New connection', expectedTemplateValue: 'Representative Test' },
-  { documentType: 'appendix4', application: consumerApplication, expectedValue: 'PA-55', expectedTemplateValue: 'Existing source' },
-  { documentType: 'appendix5', application: generatorApplication, expectedValue: '0.5', expectedTemplateValue: 'Generator heat object' },
+  { documentType: 'appendix1', application: consumerApplication },
+  { documentType: 'appendix2', application: consumerApplication },
+  { documentType: 'appendix3', application: consumerApplication, expectedGeneratedValues: ['New connection', 'Representative Test'] },
+  { documentType: 'appendix4', application: consumerApplication, expectedGeneratedValues: ['PA-55', 'Existing source'] },
+  { documentType: 'appendix5', application: generatorApplication, expectedGeneratedValues: ['0.5', 'Generator heat object'] },
 ];
 
 const results = [];
@@ -168,8 +176,10 @@ for (const check of checks) {
 
   const templateXml = documentXml(await fs.readFile(templateDocumentPath));
   const templateText = visibleText(templateXml);
-  const templateSignature = bodyContentWithoutSection(templateXml).trim().slice(0, 300);
-  assert.ok(templateSignature, `Template body is empty for ${check.documentType}`);
+  const templateBody = bodyContentWithoutSection(templateXml).trim();
+  const templatePrefix = templateStartText(templateXml);
+  assert.ok(templateBody, `Template body is empty for ${check.documentType}`);
+  assert.ok(templatePrefix, `Template start text is empty for ${check.documentType}`);
   assert.ok(!/\?{3,}/.test(templateText), `${check.documentType} template contains broken question-mark text`);
 
   const generated = await generateApplicationDocument(check.application, check.documentType);
@@ -177,28 +187,24 @@ for (const check of checks) {
   assert.ok(generated.buffer.length > 0);
 
   const generatedXml = documentXml(generated.buffer);
-  const breakIndex = generatedXml.indexOf('<w:br w:type="page"/>');
-  assert.notEqual(breakIndex, -1, `${check.documentType} has no page break before the static document`);
-
-  const dataIndex = generatedXml.indexOf(check.application.applicationNumber);
-  assert.ok(dataIndex !== -1 && dataIndex < breakIndex, `${check.documentType} does not put application data before the page break`);
-
-  const dataPageXml = generatedXml.slice(0, breakIndex);
-  assert.ok(dataPageXml.includes(check.expectedValue), `${check.documentType} does not expose expected data on the data page`);
-  assert.ok(!dataPageXml.includes('{'), `${check.documentType} still exposes placeholder syntax on the data page`);
-  assert.ok(!dataPageXml.includes('Плейсхолдер'), `${check.documentType} still renders the placeholder/source column`);
-  assert.ok(!dataPageXml.includes('\u2014'), `${check.documentType} still renders empty dash values on the data page`);
-
-  const templateIndex = generatedXml.indexOf(templateSignature);
-  assert.ok(templateIndex > breakIndex, `${check.documentType} does not preserve template body after the page break`);
+  const generatedText = visibleText(generatedXml).trim();
+  assert.ok(
+    generatedText.startsWith(templatePrefix),
+    `${check.documentType} should start directly from the document template`,
+  );
+  assert.ok(
+    !generatedText.includes('Службові дані для заповнення документа'),
+    `${check.documentType} still prepends the service data page`,
+  );
   assert.ok(!generatedXml.includes('{{'), `${check.documentType} still contains unresolved template placeholders`);
 
-  if (check.expectedTemplateValue) {
-    const templateXml = generatedXml.slice(breakIndex);
-    assert.ok(
-      templateXml.includes(check.expectedTemplateValue),
-      `${check.documentType} does not fill expected value inside the static template body`,
-    );
+  if (check.expectedGeneratedValues) {
+    for (const value of check.expectedGeneratedValues) {
+      assert.ok(
+        generatedText.includes(value),
+        `${check.documentType} does not fill expected value "${value}" inside the document template`,
+      );
+    }
   }
 
   results.push(`${check.documentType}: ${path.basename(templateDocumentPath)}`);

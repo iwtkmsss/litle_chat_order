@@ -16,7 +16,6 @@ import {
   mapApplicationToTechnicalConditions,
   valueOrEmpty,
 } from './documentFieldMapper.js';
-import { prependDocumentDataPage } from './documentDataPage.js';
 import { fillDocumentTemplatePlaceholders } from './documentTemplateFiller.js';
 import {
   getMissingDocumentFields,
@@ -327,8 +326,6 @@ export async function generateApplicationDocument(application, type, { allowMiss
   } else if (shouldFillPlaceholders) {
     buffer = fillDocumentTemplatePlaceholders(buffer, templateValues);
   }
-
-  buffer = prependDocumentDataPage(buffer, documentApplication, type, titleText);
 
   const originalName = `${sanitizeFilePart(documentApplication.applicationNumber)}-${type}.docx`;
 
