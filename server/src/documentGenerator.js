@@ -23,7 +23,7 @@ import {
   prepareDocumentTemplateData,
   usesDocumentTemplatePlaceholders,
 } from './documentTemplateValues.js';
-import { getStaticDocumentPath } from './documentTemplateRegistry.js';
+import { getTemplateDocumentPath } from './documentTemplateRegistry.js';
 
 const documentTitles = {
   appendix1: 'Додаток 1. Типовий договір на приєднання до теплових мереж',
@@ -266,7 +266,7 @@ function sanitizeFilePart(value) {
 }
 
 async function tryLoadStaticDocument(type) {
-  const staticDocumentPath = getStaticDocumentPath(type);
+  const staticDocumentPath = getTemplateDocumentPath(type);
 
   if (!staticDocumentPath) {
     return null;

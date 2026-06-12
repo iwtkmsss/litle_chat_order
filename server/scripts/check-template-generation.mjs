@@ -5,7 +5,10 @@ import path from 'node:path';
 import PizZip from 'pizzip';
 
 import { generateApplicationDocument } from '../src/documentGenerator.js';
-import { getStaticDocumentPath } from '../src/documentTemplateRegistry.js';
+import {
+  getRegisteredPublicDocumentEntries,
+  getTemplateDocumentPath,
+} from '../src/documentTemplateRegistry.js';
 
 function createApplication(questionnaire) {
   return {
@@ -116,6 +119,10 @@ function documentXml(buffer) {
   return file.asText();
 }
 
+function visibleText(xml) {
+  return xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+}
+
 function bodyContentWithoutSection(xml) {
   const open = xml.match(/<w:body\b[^>]*>/);
   assert.ok(open?.index !== undefined, 'document body is missing');
@@ -140,14 +147,30 @@ const checks = [
 
 const results = [];
 
-for (const check of checks) {
-  const staticDocumentPath = getStaticDocumentPath(check.documentType);
-  assert.ok(staticDocumentPath, `Static document path is missing for ${check.documentType}`);
-  await fs.access(staticDocumentPath);
+for (const entry of getRegisteredPublicDocumentEntries()) {
+  const publicXml = documentXml(await fs.readFile(entry.documentPath));
+  const publicText = visibleText(publicXml);
 
-  const staticXml = documentXml(await fs.readFile(staticDocumentPath));
-  const staticSignature = bodyContentWithoutSection(staticXml).trim().slice(0, 300);
-  assert.ok(staticSignature, `Static body is empty for ${check.documentType}`);
+  assert.ok(
+    !publicXml.includes('{{'),
+    `Public document ${entry.fileName} should be a clean original without template placeholders`,
+  );
+  assert.ok(
+    !/\?{3,}/.test(publicText),
+    `Public document ${entry.fileName} contains broken question-mark text`,
+  );
+}
+
+for (const check of checks) {
+  const templateDocumentPath = getTemplateDocumentPath(check.documentType);
+  assert.ok(templateDocumentPath, `Template document path is missing for ${check.documentType}`);
+  await fs.access(templateDocumentPath);
+
+  const templateXml = documentXml(await fs.readFile(templateDocumentPath));
+  const templateText = visibleText(templateXml);
+  const templateSignature = bodyContentWithoutSection(templateXml).trim().slice(0, 300);
+  assert.ok(templateSignature, `Template body is empty for ${check.documentType}`);
+  assert.ok(!/\?{3,}/.test(templateText), `${check.documentType} template contains broken question-mark text`);
 
   const generated = await generateApplicationDocument(check.application, check.documentType);
   assert.ok(Buffer.isBuffer(generated.buffer));
@@ -166,8 +189,8 @@ for (const check of checks) {
   assert.ok(!dataPageXml.includes('Плейсхолдер'), `${check.documentType} still renders the placeholder/source column`);
   assert.ok(!dataPageXml.includes('\u2014'), `${check.documentType} still renders empty dash values on the data page`);
 
-  const staticIndex = generatedXml.indexOf(staticSignature);
-  assert.ok(staticIndex > breakIndex, `${check.documentType} does not preserve static body after the page break`);
+  const templateIndex = generatedXml.indexOf(templateSignature);
+  assert.ok(templateIndex > breakIndex, `${check.documentType} does not preserve template body after the page break`);
   assert.ok(!generatedXml.includes('{{'), `${check.documentType} still contains unresolved template placeholders`);
 
   if (check.expectedTemplateValue) {
@@ -178,7 +201,7 @@ for (const check of checks) {
     );
   }
 
-  results.push(`${check.documentType}: ${path.basename(staticDocumentPath)}`);
+  results.push(`${check.documentType}: ${path.basename(templateDocumentPath)}`);
 }
 
 console.log('OK: document generation checks passed.');
