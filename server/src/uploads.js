@@ -7,12 +7,14 @@ import {
   uploadFilesPerMessage,
   uploadsDir,
 } from './config.js';
+import { normalizeUploadedFileName } from './filenameEncoding.js';
 
 const storage = multer.diskStorage({
   destination: (_request, _file, callback) => {
     callback(null, uploadsDir);
   },
   filename: (_request, file, callback) => {
+    file.originalname = normalizeUploadedFileName(file.originalname);
     const extension = path.extname(file.originalname);
     const randomName = `${Date.now()}-${crypto.randomUUID()}${extension}`;
     callback(null, randomName);

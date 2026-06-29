@@ -16,13 +16,14 @@ import {
   isCustomerVisibleStatusComment,
   isClosedApplicationStatus,
 } from './applicationStatusWorkflow.js';
+import { normalizeUploadedFileName } from './filenameEncoding.js';
 
 fs.mkdirSync(dataDir, { recursive: true });
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(generatedDocumentsDir, { recursive: true });
 
-const schemaVersion = 10;
+const schemaVersion = 11;
 const db = new Database(databasePath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -116,6 +117,7 @@ db.exec(`
     login TEXT NOT NULL DEFAULT '',
     login_normalized TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
+    password_plaintext TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'customer')),
     station_id INTEGER,
     created_by INTEGER,
@@ -491,6 +493,7 @@ migrateApplicationStatusConstraintToV4();
 function migratePendingApplicationSupportToV6() {
   addColumnIfMissing('users', 'login', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('users', 'login_normalized', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('users', 'password_plaintext', "TEXT NOT NULL DEFAULT ''");
 
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_login_normalized_active_unique
@@ -1115,6 +1118,7 @@ const userFields = `
   users.login,
   users.login_normalized AS loginNormalized,
   users.password_hash AS passwordHash,
+  users.password_plaintext AS passwordPlaintext,
   users.role,
   users.station_id AS stationId,
   stations.name AS stationName,
@@ -1124,8 +1128,8 @@ const userFields = `
 `;
 
 const createUserStatement = db.prepare(`
-  INSERT INTO users (full_name, full_name_normalized, login, login_normalized, password_hash, role, station_id, created_by, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO users (full_name, full_name_normalized, login, login_normalized, password_hash, password_plaintext, role, station_id, created_by, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const updateUserStatement = db.prepare(`
@@ -1141,7 +1145,8 @@ const updateUserStatement = db.prepare(`
 
 const updateUserPasswordStatement = db.prepare(`
   UPDATE users
-  SET password_hash = ?
+  SET password_hash = ?,
+      password_plaintext = ?
   WHERE id = ? AND role != 'admin' AND deleted_at IS NULL
 `);
 
@@ -1150,6 +1155,13 @@ const findUserByNormalizedNameStatement = db.prepare(`
   FROM users
   LEFT JOIN stations ON stations.id = users.station_id
   WHERE (users.full_name_normalized = ? OR users.login_normalized = ?) AND users.deleted_at IS NULL
+`);
+
+const findUserByLoginNormalizedStatement = db.prepare(`
+  SELECT ${userFields}
+  FROM users
+  LEFT JOIN stations ON stations.id = users.station_id
+  WHERE users.login_normalized = ? AND users.deleted_at IS NULL
 `);
 
 const getUserByIdStatement = db.prepare(`
@@ -1943,6 +1955,37 @@ const latestCustomerAccessNotificationStatement = db.prepare(`
   LIMIT 1
 `);
 
+const latestCustomerAccessNotificationByUserStatement = db.prepare(`
+  SELECT
+    email_notifications.id,
+    email_notifications.application_id AS applicationId,
+    email_notifications.stage_id AS stageId,
+    email_notifications.recipient_email AS recipientEmail,
+    email_notifications.recipient_name AS recipientName,
+    email_notifications.subject,
+    email_notifications.body,
+    email_notifications.notification_type AS notificationType,
+    email_notifications.payload,
+    email_notifications.status,
+    email_notifications.send_error AS sendError,
+    email_notifications.created_at AS createdAt
+  FROM email_notifications
+  INNER JOIN applications ON applications.id = email_notifications.application_id
+  WHERE applications.customer_user_id = ?
+    AND email_notifications.notification_type = 'customer_access_prepared'
+  ORDER BY email_notifications.created_at DESC, email_notifications.id DESC
+  LIMIT 1
+`);
+
+const userPasswordUpdatesAfterStatement = db.prepare(`
+  SELECT COUNT(*) AS count
+  FROM audit_log
+  WHERE entity_type = 'user'
+    AND entity_id = ?
+    AND action = 'update_with_password'
+    AND created_at > ?
+`);
+
 const insertPendingAccessTokenStatement = db.prepare(`
   INSERT INTO pending_application_access_tokens (
     application_id,
@@ -2206,6 +2249,8 @@ function mapUser(row) {
     login: row.login,
     loginNormalized: row.loginNormalized,
     password_hash: row.passwordHash,
+    passwordPlaintext: row.passwordPlaintext,
+    password_plaintext: row.passwordPlaintext,
     role: row.role,
     stationId: row.stationId,
     stationName: row.stationName,
@@ -2356,7 +2401,7 @@ function mapApplicationStageFile(row) {
     applicationId: row.applicationId,
     stageId: row.stageId,
     storedName: row.storedName,
-    originalName: row.originalName,
+    originalName: normalizeUploadedFileName(row.originalName),
     mimeType: row.mimeType,
     size: row.size,
     createdBy: row.createdBy,
@@ -3021,7 +3066,16 @@ export function hasAdmin() {
   return row.count > 0;
 }
 
-export function createUser({ fullName, login = '', passwordHash, role, stationId = null, createdBy = null, actor = null }) {
+export function createUser({
+  fullName,
+  login = '',
+  passwordHash,
+  passwordPlaintext = '',
+  role,
+  stationId = null,
+  createdBy = null,
+  actor = null,
+}) {
   const createdAt = getTimestamp();
   const normalized = normalizeLoginKey(fullName);
   const normalizedLogin = login ? normalizeLoginKey(login) : '';
@@ -3031,6 +3085,7 @@ export function createUser({ fullName, login = '', passwordHash, role, stationId
     login,
     normalizedLogin,
     passwordHash,
+    passwordPlaintext,
     role,
     stationId || null,
     createdBy || null,
@@ -3077,7 +3132,7 @@ const updateUserTransaction = db.transaction((userId, input, actor) => {
   );
 
   if (input.passwordHash) {
-    updateUserPasswordStatement.run(input.passwordHash, userId);
+    updateUserPasswordStatement.run(input.passwordHash, input.passwordPlaintext ?? '', userId);
     deleteUserSessionsStatement.run(userId);
   }
 
@@ -3106,6 +3161,57 @@ const updateUserTransaction = db.transaction((userId, input, actor) => {
 
 export function updateUser(userId, input, actor) {
   return updateUserTransaction(userId, input, actor);
+}
+
+export function revealUserPassword(userId, actor) {
+  const user = getUserById(userId);
+
+  if (!user || user.role === 'admin' || user.deleted_at) {
+    return null;
+  }
+
+  let password = String(user.passwordPlaintext ?? user.password_plaintext ?? '');
+  let notificationId = null;
+
+  if (!password && user.role === 'customer') {
+    const notification = latestCustomerAccessNotificationByUserStatement.get(user.id);
+
+    if (notification) {
+      const mappedNotification = mapEmailNotification(notification, { redactSensitive: false });
+      const updatesAfterNotification = userPasswordUpdatesAfterStatement
+        .get(user.id, mappedNotification.createdAt)
+        ?.count ?? 0;
+
+      if (updatesAfterNotification === 0) {
+        password = String(mappedNotification.payload?.temporaryPassword ?? '');
+        notificationId = mappedNotification.id;
+      }
+    }
+  }
+
+  recordAuditLog({
+    actor,
+    stationId: user.stationId,
+    entityType: 'user',
+    entityId: user.id,
+    action: 'user_password_viewed',
+    summary: `Адмін переглянув поточний пароль користувача ${user.fullName}.`,
+    after: {
+      id: user.id,
+      fullName: user.fullName,
+      login: user.login,
+      role: user.role,
+      stationId: user.stationId,
+      hasPassword: Boolean(password),
+      notificationId,
+    },
+  });
+
+  return {
+    userId: user.id,
+    hasPassword: Boolean(password),
+    password,
+  };
 }
 
 export function listPreparedEmailNotifications(applicationId) {
@@ -3319,13 +3425,30 @@ function getPendingApplicationById(applicationId) {
   };
 }
 
+function findCustomerUserByEmailForStation(email, stationId) {
+  const loginKey = normalizeLoginKey(email);
+
+  if (!loginKey) {
+    return null;
+  }
+
+  const user = mapUser(findUserByLoginNormalizedStatement.get(loginKey));
+
+  if (!user || user.role !== 'customer' || user.stationId !== stationId) {
+    return null;
+  }
+
+  return user;
+}
+
 const registerCustomerApplicationTransaction = db.transaction((input, metadata = {}) => {
   const timestamp = getTimestamp();
   const applicationNumber = input.applicationNumber || generateApplicationNumber();
+  const existingCustomer = findCustomerUserByEmailForStation(input.email, input.stationId);
   const applicationInput = {
     ...input,
     applicationNumber,
-    customerUserId: null,
+    customerUserId: existingCustomer?.id ?? null,
     createdBy: null,
     status: 'submitted',
   };
@@ -3347,7 +3470,7 @@ const registerCustomerApplicationTransaction = db.transaction((input, metadata =
     applicationInput.notes,
     safeJson(applicationInput.appendixData || {}),
     safeJson(deadlineData),
-    null,
+    applicationInput.customerUserId,
     chatId,
     null,
     timestamp,
@@ -3419,7 +3542,8 @@ const registerCustomerApplicationTransaction = db.transaction((input, metadata =
       applicationNumber,
       stationId: applicationInput.stationId,
       status: applicationInput.status,
-      customerUserId: null,
+      customerUserId: applicationInput.customerUserId,
+      linkedExistingCustomer: Boolean(existingCustomer),
     },
   });
 
@@ -3446,6 +3570,7 @@ const registerCustomerApplicationTransaction = db.transaction((input, metadata =
   return {
     applicationId,
     accessToken: rawToken,
+    accountLinked: Boolean(existingCustomer),
     sessionToken,
   };
 });
@@ -3454,6 +3579,7 @@ export function registerCustomerApplication(input, metadata = {}) {
   const result = registerCustomerApplicationTransaction(input, metadata);
 
   return {
+    accountLinked: result.accountLinked,
     application: getPendingApplicationById(result.applicationId),
     accessToken: result.accessToken,
     sessionToken: result.sessionToken,
@@ -4295,6 +4421,7 @@ const acceptPendingApplicationTransaction = db.transaction((applicationId, {
       login,
       loginNormalized,
       passwordHash,
+      temporaryPassword,
       'customer',
       current.stationId,
       actor?.id ?? null,
@@ -4354,12 +4481,9 @@ const acceptPendingApplicationTransaction = db.transaction((applicationId, {
   });
 
   const updatedApplication = getApplicationById(applicationId);
-  createCustomerAccessNotification(
-    updatedApplication,
-    user,
-    usedTemporaryPassword ? temporaryPassword : '',
-    timestamp,
-  );
+  if (usedTemporaryPassword) {
+    createCustomerAccessNotification(updatedApplication, user, temporaryPassword, timestamp);
+  }
 
   recordAuditLog({
     actor,
@@ -4388,15 +4512,17 @@ const acceptPendingApplicationTransaction = db.transaction((applicationId, {
     after: { applicationId, applicationNumber: current.applicationNumber },
   });
 
-  recordAuditLog({
-    actor,
-    stationId: current.stationId,
-    entityType: 'email_notification',
-    entityId: applicationId,
-    action: 'prepare_access_email',
-    summary: `Підготовлено email-повідомлення з доступом до кабінету за заявою ${current.applicationNumber}.`,
-    after: { applicationId, applicationNumber: current.applicationNumber, recipientEmail: current.email },
-  });
+  if (usedTemporaryPassword) {
+    recordAuditLog({
+      actor,
+      stationId: current.stationId,
+      entityType: 'email_notification',
+      entityId: applicationId,
+      action: 'prepare_access_email',
+      summary: `Підготовлено email-повідомлення з доступом до кабінету за заявою ${current.applicationNumber}.`,
+      after: { applicationId, applicationNumber: current.applicationNumber, recipientEmail: current.email },
+    });
+  }
 
   return {
     applicationId,
@@ -4774,7 +4900,7 @@ export function listMessages(chatId) {
 
     attachmentMap.get(row.messageId).push({
       id: row.id,
-      originalName: row.originalName,
+      originalName: normalizeUploadedFileName(row.originalName),
       mimeType: row.mimeType,
       size: row.size,
       createdAt: row.createdAt,
@@ -4796,7 +4922,11 @@ export function listMessages(chatId) {
 }
 
 export function getAttachmentById(attachmentId) {
-  return attachmentByIdStatement.get(attachmentId) ?? null;
+  const attachment = attachmentByIdStatement.get(attachmentId);
+
+  return attachment
+    ? { ...attachment, originalName: normalizeUploadedFileName(attachment.originalName) }
+    : null;
 }
 
 export function createGeneratedDocumentRecord(input, actor) {

@@ -190,11 +190,13 @@ export default function App() {
 
     try {
       const response = await api.registerCustomerApplication(input);
-      setPendingAccess(response.pendingAccess ?? {
-        applicationId: response.application.id,
-        applicationNumber: response.application.applicationNumber,
-        path: '/application-access/session',
-      });
+      setPendingAccess(response.accountLinked
+        ? null
+        : response.pendingAccess ?? {
+          applicationId: response.application.id,
+          applicationNumber: response.application.applicationNumber,
+          path: '/application-access/session',
+        });
       return response;
     } catch (error) {
       setRegistrationError(error.message);

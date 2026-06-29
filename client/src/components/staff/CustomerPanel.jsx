@@ -6,17 +6,22 @@ export function CustomerPanel({
   deletingUserId,
   isAdmin,
   onDeleteUser,
+  onRevealUserPassword,
   onSaveUser,
+  revealedUserPasswords = {},
+  revealingUserPasswordId,
   savingUserId,
   setUserDrafts,
   stations = [],
+  userPasswordRevealErrors = {},
   userDrafts = {},
   users,
 }) {
-  const [visiblePasswordUserIds, setVisiblePasswordUserIds] = useState(() => new Set());
+  const [visibleCurrentPasswordUserIds, setVisibleCurrentPasswordUserIds] = useState(() => new Set());
+  const [visibleNewPasswordUserIds, setVisibleNewPasswordUserIds] = useState(() => new Set());
 
-  function togglePasswordVisibility(userId) {
-    setVisiblePasswordUserIds((current) => {
+  function toggleNewPasswordVisibility(userId) {
+    setVisibleNewPasswordUserIds((current) => {
       const next = new Set(current);
 
       if (next.has(userId)) {
@@ -27,6 +32,27 @@ export function CustomerPanel({
 
       return next;
     });
+  }
+
+  async function toggleCurrentPasswordVisibility(chatUser) {
+    if (visibleCurrentPasswordUserIds.has(chatUser.id)) {
+      setVisibleCurrentPasswordUserIds((current) => {
+        const next = new Set(current);
+        next.delete(chatUser.id);
+        return next;
+      });
+      return;
+    }
+
+    const isRevealed = await onRevealUserPassword?.(chatUser);
+
+    if (isRevealed) {
+      setVisibleCurrentPasswordUserIds((current) => {
+        const next = new Set(current);
+        next.add(chatUser.id);
+        return next;
+      });
+    }
   }
 
   return (
@@ -53,7 +79,12 @@ export function CustomerPanel({
               role: chatUser.role ?? 'customer',
               stationId: String(chatUser.stationId ?? ''),
             };
-            const isPasswordVisible = visiblePasswordUserIds.has(chatUser.id);
+            const isCurrentPasswordVisible = visibleCurrentPasswordUserIds.has(chatUser.id);
+            const isNewPasswordVisible = visibleNewPasswordUserIds.has(chatUser.id);
+            const revealedPassword = revealedUserPasswords[chatUser.id] ?? '';
+            const currentPasswordValue = isCurrentPasswordVisible && revealedPassword ? revealedPassword : '********';
+            const revealError = userPasswordRevealErrors[chatUser.id] ?? '';
+            const isRevealingPassword = revealingUserPasswordId === chatUser.id;
 
             return (
               <article className={isAdmin ? 'entity-row entity-row--editable' : 'entity-row'} key={chatUser.id}>
@@ -133,6 +164,28 @@ export function CustomerPanel({
                       </select>
                     </label>
                     <label className="field-block">
+                      <span>Поточний пароль</span>
+                      <span className="password-input-wrap">
+                        <input
+                          className="field-input"
+                          readOnly
+                          type="text"
+                          value={currentPasswordValue}
+                        />
+                        <button
+                          aria-label={isCurrentPasswordVisible ? 'Сховати поточний пароль' : 'Показати поточний пароль'}
+                          className="password-eye-button"
+                          disabled={isRevealingPassword}
+                          onClick={() => toggleCurrentPasswordVisibility(chatUser)}
+                          title={isCurrentPasswordVisible ? 'Сховати поточний пароль' : 'Показати поточний пароль'}
+                          type="button"
+                        >
+                          {isCurrentPasswordVisible ? '◉' : '◎'}
+                        </button>
+                      </span>
+                      {revealError ? <small className="password-status-note">{revealError}</small> : null}
+                    </label>
+                    <label className="field-block">
                       <span>Новий пароль</span>
                       <span className="password-input-wrap">
                         <input
@@ -144,17 +197,17 @@ export function CustomerPanel({
                             }))
                           }
                           placeholder="Не змінювати"
-                          type={isPasswordVisible ? 'text' : 'password'}
+                          type={isNewPasswordVisible ? 'text' : 'password'}
                           value={draft.password}
                         />
                         <button
-                          aria-label={isPasswordVisible ? 'Сховати пароль' : 'Показати пароль'}
+                          aria-label={isNewPasswordVisible ? 'Сховати новий пароль' : 'Показати новий пароль'}
                           className="password-eye-button"
-                          onClick={() => togglePasswordVisibility(chatUser.id)}
-                          title={isPasswordVisible ? 'Сховати пароль' : 'Показати пароль'}
+                          onClick={() => toggleNewPasswordVisibility(chatUser.id)}
+                          title={isNewPasswordVisible ? 'Сховати новий пароль' : 'Показати новий пароль'}
                           type="button"
                         >
-                          {isPasswordVisible ? '◉' : '◎'}
+                          {isNewPasswordVisible ? '◉' : '◎'}
                         </button>
                       </span>
                     </label>

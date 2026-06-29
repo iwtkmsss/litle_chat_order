@@ -101,6 +101,12 @@ export const api = {
     });
   },
 
+  revealUserPassword(userId) {
+    return request(`/api/users/${userId}/password/reveal`, {
+      method: 'POST',
+    });
+  },
+
   deleteUser(userId) {
     return request(`/api/users/${userId}`, {
       method: 'DELETE',

@@ -165,6 +165,8 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
   const [stageDrafts, setStageDrafts] = useState({});
   const [stationDrafts, setStationDrafts] = useState({});
   const [userDrafts, setUserDrafts] = useState({});
+  const [revealedUserPasswords, setRevealedUserPasswords] = useState({});
+  const [userPasswordRevealErrors, setUserPasswordRevealErrors] = useState({});
   const [settingDrafts, setSettingDrafts] = useState({});
   const [deadlineDrafts, setDeadlineDrafts] = useState({});
   const [stageTemplateDrafts, setStageTemplateDrafts] = useState({});
@@ -194,6 +196,7 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
   const [savingStageTemplateId, setSavingStageTemplateId] = useState(null);
   const [deletingApplicationId, setDeletingApplicationId] = useState(null);
   const [deletingUserId, setDeletingUserId] = useState(null);
+  const [revealingUserPasswordId, setRevealingUserPasswordId] = useState(null);
   const [generatingDocumentType, setGeneratingDocumentType] = useState('');
   const [retryingNotificationId, setRetryingNotificationId] = useState(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState(null);
@@ -362,13 +365,53 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
     setPanelMessage('');
 
     try {
-      await api.updateUser(chatUser.id, userDrafts[chatUser.id]);
+      const draft = userDrafts[chatUser.id] ?? {};
+      await api.updateUser(chatUser.id, draft);
+      if (draft.password) {
+        setRevealedUserPasswords((current) => ({
+          ...current,
+          [chatUser.id]: draft.password,
+        }));
+        setUserPasswordRevealErrors((current) => ({
+          ...current,
+          [chatUser.id]: '',
+        }));
+      }
       setPanelMessage('Користувача оновлено.');
       await loadDashboard({ silent: true });
     } catch (actionError) {
       setPanelMessage(actionError.message);
     } finally {
       setSavingUserId(null);
+    }
+  }
+
+  async function handleRevealUserPassword(chatUser) {
+    if (revealedUserPasswords[chatUser.id]) {
+      return true;
+    }
+
+    setRevealingUserPasswordId(chatUser.id);
+    setUserPasswordRevealErrors((current) => ({
+      ...current,
+      [chatUser.id]: '',
+    }));
+
+    try {
+      const response = await api.revealUserPassword(chatUser.id);
+      setRevealedUserPasswords((current) => ({
+        ...current,
+        [chatUser.id]: response.password,
+      }));
+      return true;
+    } catch (actionError) {
+      setUserPasswordRevealErrors((current) => ({
+        ...current,
+        [chatUser.id]: actionError.message,
+      }));
+      return false;
+    } finally {
+      setRevealingUserPasswordId(null);
     }
   }
 
@@ -548,7 +591,9 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
       );
       setPanelMessage(response.accessPrepared
         ? 'Заяву прийнято. Кабінет замовника створено або прив’язано, email-повідомлення з доступом підготовлено.'
-        : 'Статус заяви оновлено.');
+        : nextDraft.status === 'accepted'
+          ? 'Заяву прийнято та прив’язано до існуючого кабінету замовника. Новий пароль не надсилався.'
+          : 'Статус заяви оновлено.');
     } catch (actionError) {
       setPanelMessage(actionError.message);
     } finally {
@@ -891,10 +936,14 @@ export function ManagerDashboard({ user, onLogout, onNavigate, mode = user.role 
           deletingUserId={deletingUserId}
           isAdmin={isAdmin}
           onDeleteUser={handleDeleteUser}
+          onRevealUserPassword={handleRevealUserPassword}
           onSaveUser={handleSaveUser}
+          revealedUserPasswords={revealedUserPasswords}
+          revealingUserPasswordId={revealingUserPasswordId}
           savingUserId={savingUserId}
           setUserDrafts={setUserDrafts}
           stations={stations}
+          userPasswordRevealErrors={userPasswordRevealErrors}
           userDrafts={userDrafts}
           users={users}
         />

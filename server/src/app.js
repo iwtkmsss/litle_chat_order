@@ -55,6 +55,7 @@ import {
   setApplicationStageFinalFile,
   clearApplicationStageFinalFile,
   revealCustomerAccessCredentials,
+  revealUserPassword,
   updateApplication,
   updateApplicationStage,
   updateDeadlineRule,
@@ -968,6 +969,7 @@ export function createApp({ clientUrl }) {
       await sendPreparedApplicationEmails(result.application.id, null);
 
       response.status(201).json({
+        accountLinked: result.accountLinked,
         application: result.application,
         accessToken: result.accessToken,
         accessPath: `/application-access/${result.accessToken}`,
@@ -1132,6 +1134,7 @@ export function createApp({ clientUrl }) {
       const user = createUser({
         fullName: payload.fullName,
         passwordHash,
+        passwordPlaintext: payload.password,
         role: payload.role,
         stationId: payload.stationId,
         createdBy: request.auth.user.id,
@@ -1164,6 +1167,7 @@ export function createApp({ clientUrl }) {
         fullName: payload.fullName,
         login: payload.login,
         passwordHash,
+        passwordPlaintext: payload.password,
         role: payload.role,
         stationId: payload.stationId,
       }, request.auth.user);
@@ -1182,6 +1186,28 @@ export function createApp({ clientUrl }) {
 
       return sendError(response, 400, error.message);
     }
+  });
+
+  app.post('/api/users/:userId/password/reveal', requireAuth, requireAdmin, (request, response) => {
+    const userId = Number(request.params.userId);
+
+    if (!Number.isInteger(userId) || userId < 1) {
+      return sendError(response, 400, 'Некоректний ідентифікатор користувача.');
+    }
+
+    const result = revealUserPassword(userId, request.auth.user);
+
+    if (!result) {
+      return sendError(response, 404, 'Користувача не знайдено або його пароль не можна переглядати.');
+    }
+
+    if (!result.hasPassword) {
+      return sendError(response, 404, 'Поточний пароль недоступний. Встановіть новий пароль для цього користувача.');
+    }
+
+    return response.json({
+      password: result.password,
+    });
   });
 
   app.delete('/api/users/:userId', requireAuth, requireAdmin, (request, response) => {
@@ -1458,7 +1484,7 @@ export function createApp({ clientUrl }) {
 
           return response.json({
             application,
-            accessPrepared: true,
+            accessPrepared: result.usedTemporaryPassword,
             createdUser: result.createdUser,
             emailDispatch,
           });

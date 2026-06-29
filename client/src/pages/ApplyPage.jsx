@@ -35,14 +35,18 @@ export function ApplyPage({
     setPendingResult(result);
     setToast({
       id: Date.now(),
-      message: 'Заяву подано. Тимчасовий кабінет створено.',
+      message: result.accountLinked
+        ? 'Заяву подано та додано до вашого особистого кабінету.'
+        : 'Заяву подано. Тимчасовий кабінет створено.',
       tone: 'success',
     });
-    onPendingAccessChange?.(result.pendingAccess ?? {
-      applicationId: result.application.id,
-      applicationNumber: result.application.applicationNumber,
-      path: '/application-access/session',
-    });
+    onPendingAccessChange?.(result.accountLinked
+      ? null
+      : result.pendingAccess ?? {
+        applicationId: result.application.id,
+        applicationNumber: result.application.applicationNumber,
+        path: '/application-access/session',
+      });
   }
 
   return (
@@ -64,8 +68,8 @@ export function ApplyPage({
         <header className="public-page-header apply-page__header">
           <h1>Подати заяву на приєднання</h1>
           <p className="muted-copy">
-            Заповніть коротку форму. Після подання буде створено тимчасовий кабінет заявки,
-            а оператор перевірить дані та повідомить про наступні кроки.
+            Заповніть коротку форму. Якщо для email вже є особистий кабінет, заява автоматично
+            з’явиться там. Якщо кабінету ще немає, після перевірки оператор підготує доступ.
           </p>
         </header>
 
@@ -86,16 +90,17 @@ export function ApplyPage({
               ) : null}
             </div>
             <p className="muted-copy">
-              Збережіть цей номер. Він потрібен для перевірки стану заявки. Після прийняття заявки
-              оператором буде підготовлено email-повідомлення з доступом до особистого кабінету.
+              {pendingResult.accountLinked
+                ? 'Заяву додано до вашого існуючого особистого кабінету. Увійдіть з чинним паролем, щоб переглянути всі заявки за цим email.'
+                : 'Збережіть цей номер. Він потрібен для перевірки стану заявки. Після прийняття заявки оператором буде підготовлено email-повідомлення з доступом до особистого кабінету.'}
             </p>
             <div className="form-actions">
               <button
                 className="primary-button"
-                onClick={() => onNavigate?.(pendingResult.pendingAccess?.path ?? '/application-access/session')}
+                onClick={() => onNavigate?.(pendingResult.accountLinked ? '/login' : pendingResult.pendingAccess?.path ?? '/application-access/session')}
                 type="button"
               >
-                Перейти до моєї заявки
+                {pendingResult.accountLinked ? 'Увійти в особистий кабінет' : 'Перейти до моєї заявки'}
               </button>
               <button className="secondary-button" onClick={() => onNavigate?.('/status')} type="button">
                 Перевірити заяву

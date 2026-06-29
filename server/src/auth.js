@@ -58,5 +58,6 @@ export function userToClient(user) {
     stationId: user.stationId ?? null,
     stationName: user.stationName ?? '',
     createdAt: user.createdAt ?? user.created_at,
+    hasVisiblePassword: Boolean(user.passwordPlaintext ?? user.password_plaintext),
   };
 }

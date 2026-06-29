@@ -1456,6 +1456,15 @@ p {
   outline: none;
 }
 
+.password-status-note {
+  display: block;
+  margin-top: 7px;
+  color: var(--color-danger);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .dashboard-actions__buttons {
   display: flex;
   justify-content: flex-end;
